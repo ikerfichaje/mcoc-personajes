@@ -127,7 +127,7 @@ details.panel > .body { padding: 0 0 12px; }
   font-size: 13px; cursor: pointer;
 }
 .toggle.on { background: var(--text); color: var(--bg); border-color: var(--text); }
-.toggle[data-cls].on { background: var(--cc); border-color: var(--cc); color: #111; }
+.toggle[data-cls].on, .toggle[data-rkcls].on { background: var(--cc); border-color: var(--cc); color: #111; }
 select.sel {
   background: var(--bg3); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px;
 }
@@ -171,6 +171,12 @@ select.sel {
 .t-C { background: #3fb6c9; color: #10161a; }
 .t-D { background: #5a7bd1; color: #fff; }
 .t-E, .t-F { background: #6b7280; color: #fff; }
+
+/* ---------- Ranking ---------- */
+.rk-cls { margin: 0 0 10px; }
+.tier-head { display: flex; align-items: center; gap: 8px; margin: 18px 0 2px; font-size: 15px; }
+.tier-head small { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; }
+.citem .pos { width: 24px; flex: none; text-align: right; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 /* ---------- Ficha ---------- */
 .hero { display: flex; gap: 14px; align-items: center; margin: 4px 0 14px; }
@@ -242,6 +248,17 @@ details.kit .chips { padding-bottom: 10px; }
   background: var(--accent); color: #fff; font-size: 14px; line-height: 22px; padding: 0; cursor: pointer;
 }
 .slot-name { font-size: 10px; text-align: center; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roster { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 6px 0; }
+.roster > div { min-width: 0; }
+.roster .slot .rm { width: 20px; height: 20px; line-height: 20px; font-size: 13px; top: -5px; right: -5px; }
+.check {
+  flex: none; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); color: var(--muted); font-size: 16px;
+}
+.check.on { background: var(--ok); border-color: var(--ok); color: #111; font-weight: 700; }
+.card .team { margin: 4px 0 10px; }
+.shake { animation: shake .3s; }
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 .covgrid { display: grid; grid-template-columns: 1fr; gap: 4px; }
 .cov { display: flex; gap: 8px; align-items: baseline; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .cov:last-child { border-bottom: 0; }

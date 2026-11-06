@@ -42,6 +42,10 @@ Se publica con **GitHub Pages desde la raíz de `main`** (*Settings → Pages �
 1. Sustituye el Excel (mismas hojas y columnas).
 2. `powershell -ExecutionPolicy Bypass -File scripts\excel-to-json.ps1`
 3. Si hay campeones nuevos: `powershell -ExecutionPolicy Bypass -File scripts\download-images.ps1`
+3b. Efectos leídos del kit (provoca / obtiene, incluidos los propios de cada campeón): descarga
+   <https://codeload.github.com/Shadey1/Mcoc-help/zip/refs/heads/main>, descomprímelo fuera del proyecto y ejecuta
+   `powershell -ExecutionPolicy Bypass -File scripts\kit-effects.ps1 -Abilities <ruta>\data\champions\abilities.json`.
+   Genera `data/kit-effects.js` (solo nombres de efectos, nunca el texto de los kits). Usa `scripts/glosario.json` para traducir.
 4. Sube `VERSION` en `sw.js` (p. ej. `mcoc-v2`) para que los móviles descarguen la nueva versión.
 
 ## Fuentes y aviso legal

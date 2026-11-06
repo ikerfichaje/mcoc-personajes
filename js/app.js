@@ -104,6 +104,21 @@
       c.adv = none(r['¿Cuál te conviene más?']) ? '' : r['¿Cuál te conviene más?'];
     }
   }
+  // Efectos leídos directamente del texto del kit (scripts/kit-effects.ps1): incluyen los propios de cada
+  // campeón y corrigen la dirección (provoca / obtiene) de lo que venía del Excel.
+  {
+    const KITFX = self.MCOC_KITFX || {};
+    const has = (arr, e) => arr.some(x => norm(x) === norm(e));
+    for (const c of champs) {
+      const k = c.url ? KITFX[c.url.split('/').pop()] : null;
+      if (!k) continue;
+      const prov = (k.prov || []).slice(), gain = (k.gain || []).slice();
+      c.prov.forEach(e => { if (!has(prov, e) && !has(gain, e)) prov.push(e); });
+      c.gain.forEach(e => { if (!has(gain, e) && !has(prov, e)) gain.push(e); });
+      c.prov = prov; c.gain = gain;
+      c.other = c.other.filter(e => !has(prov, e) && !has(gain, e));
+    }
+  }
   const nameIndex = new Map(champs.map(c => [norm(c.name), c]));
   const findChamp = n => byName.get(n) || nameIndex.get(norm(n));
 
@@ -183,11 +198,11 @@
   const effectLabel = k => (effects.get(k) || { label: k }).label;
 
   // ---------- estado ----------
-  const S = Object.assign({ q: '', filters: [], cls: [], rar: '', sort: 'yt', relSeg: 'bc', bestUse: 'atk', bestCls: '', best7: false },
+  const S = Object.assign({ q: '', filters: [], cls: [], rar: '', sort: 'yt', relSeg: 'bc', bestUse: 'atk', bestCls: '', best7: false, rkCls: 'Cósmico', rkBy: 'yt', rk7: false },
     store.get('mcoc-state', {}));
   S.q = '';
   let team = store.get('mcoc-team', []).filter(n => byName.has(n));
-  const saveState = () => store.set('mcoc-state', { filters: S.filters, cls: S.cls, rar: S.rar, sort: S.sort, relSeg: S.relSeg, bestUse: S.bestUse, bestCls: S.bestCls, best7: S.best7 });
+  const saveState = () => store.set('mcoc-state', { filters: S.filters, cls: S.cls, rar: S.rar, sort: S.sort, relSeg: S.relSeg, bestUse: S.bestUse, bestCls: S.bestCls, best7: S.best7, rkCls: S.rkCls, rkBy: S.rkBy, rk7: S.rk7, teamSeg: S.teamSeg, recUse: S.recUse, recSize: S.recSize });
   const saveTeam = () => store.set('mcoc-team', team);
 
   // ---------- piezas de interfaz ----------
@@ -461,8 +476,211 @@
     setTimeout(() => input.focus(), 50);
   }
 
+  // ---------- Mi roster y recomendaciones de equipo ----------
+  const ROSTER_MAX = 30;
+  let roster = store.get('mcoc-roster', []).filter(n => byName.has(n));
+  const saveRoster = () => store.set('mcoc-roster', roster);
+
+  // Sinergias en ambos sentidos: nombre -> Map(compañero -> Set(efectos))
+  const synMap = new Map();
+  const addSyn = (a, b, e) => {
+    if (!synMap.has(a)) synMap.set(a, new Map());
+    if (!synMap.get(a).has(b)) synMap.get(a).set(b, new Set());
+    synMap.get(a).get(b).add(e);
+  };
+  champs.forEach(c => c.syn.forEach(s => s.with.forEach(w => {
+    const p = findChamp(w);
+    if (p && p !== c) { addSyn(c.name, p.name, s.e); addSyn(p.name, c.name, s.e); }
+  })));
+  // Inmunidades «clave» (las de los nodos más habituales) que tiene cada campeón (siempre o condicional)
+  const KEY_IMM = new Map(QUICK_IMM.map(e => [norm(e), e]));
+  champs.forEach(c => {
+    c.keyImm = new Set([...c.immP, ...c.immC.map(x => x.e)].map(norm).filter(k => KEY_IMM.has(k)));
+  });
+
+  const TV = { 'S+': 10, 'S': 8, 'A': 6, 'B': 4, 'C': 2.5, 'D': 1.5, 'E': 1, 'F': 1 };
+  // Valor individual (0-10) según el uso: ataque = media de tier ataque y youtubers; defensa = sobre todo tier defensa
+  function champValue(c, use) {
+    const main = use === 'def' ? c.def : c.atk;
+    const a = TV[main], b = TV[c.yt];
+    if (a == null && b == null) return 4; // sin valorar (p. ej. recién salidos)
+    if (a == null) return b;
+    if (b == null) return a;
+    return use === 'def' ? a * 0.7 + b * 0.3 : (a + b) / 2;
+  }
+  const W = { syn: 2, synMax: 4, imm: 0.6, cls: 0.8 };
+  function teamScore(t, use) {
+    let power = 0;
+    const syn = [], imm = new Set(), classes = new Set();
+    t.forEach((c, i) => {
+      power += champValue(c, use);
+      c.keyImm.forEach(k => imm.add(k));
+      classes.add(c.cls);
+      for (let j = i + 1; j < t.length; j++) {
+        const e = synMap.get(c.name) && synMap.get(c.name).get(t[j].name);
+        if (e) syn.push({ a: c, b: t[j], e: [...e] });
+      }
+    });
+    const total = power + W.syn * Math.min(syn.length, W.synMax) + W.imm * imm.size + W.cls * classes.size;
+    return { total, power, syn, imm, classes };
+  }
+  function improveTeam(t, pool, use) {
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (let i = 0; i < t.length; i++) {
+        let best = teamScore(t, use).total;
+        for (const c of pool) {
+          if (t.includes(c)) continue;
+          const tt = t.slice(); tt[i] = c;
+          const s = teamScore(tt, use).total;
+          if (s > best + 0.01) { best = s; t[i] = c; changed = true; }
+        }
+      }
+      if (!changed) break;
+    }
+    return t;
+  }
+  // Mejores equipos dentro de `pool` (greedy desde varias semillas + mejora local); equipos distintos entre sí
+  function bestTeams(pool, size, use, n = 3) {
+    const seeds = pool.slice().sort((a, b) => champValue(b, use) - champValue(a, use)).slice(0, 15);
+    const cands = [];
+    for (const s of seeds) {
+      const t = [s];
+      while (t.length < size) {
+        let best = null, bs = -Infinity;
+        for (const c of pool) {
+          if (t.includes(c)) continue;
+          const sc = teamScore([...t, c], use).total;
+          if (sc > bs) { bs = sc; best = c; }
+        }
+        t.push(best);
+      }
+      improveTeam(t, pool, use);
+      cands.push({ t, s: teamScore(t, use) });
+    }
+    cands.sort((a, b) => b.s.total - a.s.total);
+    const out = [];
+    for (const c of cands) {
+      // que cada equipo propuesto se diferencie en al menos 2 campeones de los anteriores
+      if (out.every(o => c.t.filter(x => !o.t.includes(x)).length >= Math.min(2, size - 1))) out.push(c);
+      if (out.length >= n) break;
+    }
+    return out;
+  }
+  // Campeones de fuera del roster que más mejorarían el equipo t (cambiando a uno de sus miembros)
+  function upgradesFor(t, use, inRoster) {
+    const base = teamScore(t, use);
+    const res = [];
+    for (const o of champs) {
+      if (inRoster.has(o.name)) continue;
+      let best = null;
+      t.forEach((m, i) => {
+        const tt = t.slice(); tt[i] = o;
+        const s = teamScore(tt, use);
+        if (!best || s.total > best.s.total) best = { s, out: m };
+      });
+      if (best.s.total > base.total + 0.5) res.push({ o, out: best.out, gain: best.s.total - base.total, s: best.s });
+    }
+    res.sort((a, b) => b.gain - a.gain);
+    return res.slice(0, 3).map(r => {
+      const why = [];
+      const tierT = use === 'def' ? r.o.def : r.o.atk;
+      if (!none(tierT) || !none(r.o.yt)) why.push(`tier ${use === 'def' ? 'defensa' : 'ataque'} ${none(tierT) ? '–' : tierT} (youtubers ${none(r.o.yt) ? '–' : r.o.yt})`);
+      const newSyn = r.s.syn.filter(x => x.a === r.o || x.b === r.o).map(x => `${x.e.join(', ')} con ${x.a === r.o ? x.b.name : x.a.name}`);
+      if (newSyn.length) why.push('sinergia: ' + newSyn.join('; '));
+      const newImm = [...r.s.imm].filter(k => !base.imm.has(k)).map(k => KEY_IMM.get(k));
+      if (newImm.length) why.push('cubre ' + newImm.join(', '));
+      if (r.s.classes.size > base.classes.size) why.push('añade la clase ' + r.o.cls);
+      const lost = base.syn.filter(x => x.a === r.out || x.b === r.out).map(x => (x.a === r.out ? x.b.name : x.a.name));
+      if (lost.length) why.push('pierdes la sinergia con ' + lost.join(', '));
+      return Object.assign(r, { why });
+    });
+  }
+
+  function pickMany() {
+    const bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = `<div class="sheet"><h3>Mi roster <small class="empty" id="rcount"></small></h3>
+      <div class="search"><input type="search" placeholder="Buscar campeón…" autocomplete="off"></div>
+      <ul class="list" style="margin-top:8px"></ul>
+      <div class="btns"><button class="btn" data-done>Listo</button></div></div>`;
+    const input = bg.querySelector('input'), ul = bg.querySelector('ul');
+    const draw = () => {
+      bg.querySelector('#rcount').textContent = `${roster.length}/${ROSTER_MAX}`;
+      const q = norm(input.value);
+      const arr = sortChamps(champs.filter(c => !q || norm(c.name).includes(q)), 'yt');
+      ul.innerHTML = arr.map(c => {
+        const on = roster.includes(c.name);
+        return `<li><button class="citem" data-tog="${esc(c.name)}">${avatar(c, 'sm')}<span class="meta"><div class="nm">${esc(c.name)}</div><div class="sub">${clsTag(c.cls)}<span>${esc(c.rar)}</span></div></span><span class="check ${on ? 'on' : ''}">${on ? '✓' : '+'}</span></button></li>`;
+      }).join('');
+    };
+    const close = () => { bg.remove(); viewTeam(); };
+    input.addEventListener('input', draw);
+    bg.addEventListener('click', e => {
+      if (e.target === bg || e.target.closest('[data-done]')) { close(); return; }
+      const b = e.target.closest('[data-tog]');
+      if (!b) return;
+      const n = b.dataset.tog;
+      if (roster.includes(n)) roster = roster.filter(x => x !== n);
+      else if (roster.length < ROSTER_MAX) roster.push(n);
+      else { b.classList.add('shake'); return; }
+      saveRoster(); draw();
+    });
+    document.body.appendChild(bg);
+    draw();
+    setTimeout(() => input.focus(), 50);
+  }
+
+  const teamSeg = () => `<div class="seg">${[['team', 'Equipo'], ['roster', `Mi roster (${roster.length})`], ['rec', 'Recomendaciones']].map(([k, l]) =>
+    `<button data-tseg="${k}" class="${(S.teamSeg || 'team') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+
+  function viewRoster() {
+    const members = sortChamps(roster.map(n => byName.get(n)).filter(Boolean), 'yt');
+    view.innerHTML = `${teamSeg()}
+      <p class="hint">Añade tus ${ROSTER_MAX} mejores campeones. En «Recomendaciones» verás los mejores equipos que puedes montar con ellos y qué campeones de fuera los mejorarían.</p>
+      <div class="roster">${members.map(c => `<div><a class="slot" href="${champHref(c)}" style="border:0">${avatar(c)}<button class="rm" data-rmroster="${esc(c.name)}" aria-label="Quitar">×</button></a><div class="slot-name">${esc(c.name)}</div></div>`).join('')}
+        ${roster.length < ROSTER_MAX ? `<div><button class="slot" data-addroster aria-label="Añadir campeones">+</button><div class="slot-name">${roster.length}/${ROSTER_MAX}</div></div>` : ''}</div>
+      <div class="btns"><button class="btn" data-addroster>${roster.length ? 'Editar roster' : '+ Añadir campeones'}</button>
+        ${roster.length ? '<button class="btn sec" data-clearroster>Vaciar</button>' : ''}</div>`;
+  }
+
+  function viewRec() {
+    const use = S.recUse || 'atk', size = S.recSize || 5;
+    const pool = roster.map(n => byName.get(n)).filter(Boolean);
+    const ctrl = `${teamSeg()}
+      <div class="row"><label>Uso</label>
+        <button class="toggle ${use === 'atk' ? 'on' : ''}" data-recuse="atk">Atacar</button>
+        <button class="toggle ${use === 'def' ? 'on' : ''}" data-recuse="def">Defender</button></div>
+      <div class="row"><label>Tamaño</label>
+        <button class="toggle ${size === 5 ? 'on' : ''}" data-recsize="5">5 (Misiones)</button>
+        <button class="toggle ${size === 3 ? 'on' : ''}" data-recsize="3">3 (Guerra)</button></div>`;
+    if (pool.length < size) {
+      view.innerHTML = `${ctrl}<p class="hint">Necesitas al menos ${size} campeones en tu roster (tienes ${pool.length}).</p>
+        <div class="btns"><button class="btn" data-tseg="roster">Ir a Mi roster</button></div>`;
+      return;
+    }
+    const inRoster = new Set(roster);
+    const teams = bestTeams(pool, size, use, 3);
+    view.innerHTML = `${ctrl}
+      <p class="hint">Puntuación = nivel de los campeones (tiers) + sinergias entre ellos + inmunidades clave cubiertas + variedad de clases. Es orientativa: no conoce el rango ni la firma de tus campeones.</p>
+      ${teams.map((x, i) => {
+        const ups = upgradesFor(x.t, use, inRoster);
+        return `<section class="card"><h3>Equipo ${i + 1} · ${x.s.total.toFixed(1)} puntos</h3>
+          <div class="team" style="grid-template-columns:repeat(${size},1fr)">${x.t.map(c => `<div><a class="slot" href="${champHref(c)}" style="border:0">${avatar(c)}</a><div class="slot-name">${esc(c.name)}</div></div>`).join('')}</div>
+          ${x.s.syn.length ? `<p><b>Sinergias:</b> ${x.s.syn.map(s => `${esc(s.a.name)} + ${esc(s.b.name)} <small class="empty">(${esc(s.e.join(', '))})</small>`).join(' · ')}</p>` : '<p class="empty">Sin sinergias conocidas entre ellos.</p>'}
+          <p><b>Inmunes a:</b> ${x.s.imm.size ? esc([...x.s.imm].map(k => KEY_IMM.get(k)).join(', ')) : '—'}</p>
+          <p><b>Clases:</b> ${[...x.s.classes].map(clsTag).join(' ')}</p>
+          ${ups.length ? `<h4>Lo mejorarían (fuera de tu roster)</h4><ul class="list">${ups.map(u => `<li><a class="citem" href="${champHref(u.o)}">${avatar(u.o, 'sm')}<span class="meta">
+            <div class="nm">${esc(u.o.name)} <small class="empty">por ${esc(u.out.name)}</small></div><div class="why">+${u.gain.toFixed(1)} · ${esc(u.why.join(' · '))}</div></span></a></li>`).join('')}</ul>` : ''}
+          <div class="btns"><button class="btn sec" data-useteam="${esc(x.t.map(c => c.name).join('|'))}">Usar este equipo</button></div>
+        </section>`;
+      }).join('')}`;
+  }
+
   function viewTeam() {
     setTitle('Equipo', false);
+    if (S.teamSeg === 'roster') return viewRoster();
+    if (S.teamSeg === 'rec') return viewRec();
     const members = team.map(n => byName.get(n)).filter(Boolean);
     const slots = [];
     for (let i = 0; i < 5; i++) {
@@ -517,14 +735,36 @@
             ${c.adv ? `<small>${esc(c.adv)}</small>` : ''}</span></div>`).join('')}
         </section>`;
     }
-    view.innerHTML = `<div class="team">${slots.join('')}</div>
+    view.innerHTML = `${teamSeg()}<div class="team">${slots.join('')}</div>
       ${members.length ? `<div class="btns"><button class="btn sec" data-clearteam>Vaciar equipo</button></div>` : ''}${body}`;
   }
   view.addEventListener('click', e => {
     if (e.target.closest('[data-addteam]')) { pickChampion(n => { if (team.length < 5) { team.push(n); saveTeam(); } viewTeam(); }); return; }
     const rm = e.target.closest('[data-rmteam]');
     if (rm) { e.preventDefault(); team = team.filter(n => n !== rm.dataset.rmteam); saveTeam(); viewTeam(); return; }
-    if (e.target.closest('[data-clearteam]')) { team = []; saveTeam(); viewTeam(); }
+    if (e.target.closest('[data-clearteam]')) { team = []; saveTeam(); viewTeam(); return; }
+    const ts = e.target.closest('[data-tseg]');
+    if (ts) { S.teamSeg = ts.dataset.tseg; saveState(); window.scrollTo(0, 0); viewTeam(); return; }
+    if (e.target.closest('[data-addroster]')) { pickMany(); return; }
+    const rr = e.target.closest('[data-rmroster]');
+    if (rr) { e.preventDefault(); roster = roster.filter(n => n !== rr.dataset.rmroster); saveRoster(); viewTeam(); return; }
+    if (e.target.closest('[data-clearroster]')) {
+      const bg = document.createElement('div');
+      bg.className = 'sheet-bg';
+      bg.innerHTML = `<div class="sheet"><p>¿Vaciar tu roster de ${roster.length} campeones?</p><div class="btns"><button class="btn" data-yes>Vaciar</button><button class="btn sec">Cancelar</button></div></div>`;
+      bg.addEventListener('click', ev => {
+        if (ev.target.closest('[data-yes]')) { roster = []; saveRoster(); viewTeam(); }
+        if (ev.target === bg || ev.target.closest('.btn')) bg.remove();
+      });
+      document.body.appendChild(bg);
+      return;
+    }
+    const ru = e.target.closest('[data-recuse]');
+    if (ru) { S.recUse = ru.dataset.recuse; saveState(); viewTeam(); return; }
+    const rs = e.target.closest('[data-recsize]');
+    if (rs) { S.recSize = +rs.dataset.recsize; saveState(); viewTeam(); return; }
+    const ut = e.target.closest('[data-useteam]');
+    if (ut) { team = ut.dataset.useteam.split('|'); saveTeam(); S.teamSeg = 'team'; saveState(); window.scrollTo(0, 0); viewTeam(); }
   });
 
   // ---------- vista: reliquias ----------
@@ -619,6 +859,44 @@
       ${relicChampList(s.champs, 'def')}`;
   }
 
+  // ---------- vista: ranking por clase ----------
+  const RK_BY = [['yt', 'Youtubers'], ['atk', 'Ataque'], ['def', 'Defensa']];
+  const RK_SRC = {
+    yt: 'Media de Vega, Lagacy, MetalSonicDude y Seatin (mcoc.app).',
+    atk: 'MCOC Guide Blog, ataque (S+ … E). No valora Deathless ni Stellar-Forged.',
+    def: 'MCOC Guide Blog, defensa (S … D). No valora Deathless ni Stellar-Forged.'
+  };
+  function viewRanking() {
+    setTitle('Ranking por clase', false);
+    const by = S.rkBy, cls = CLASSES.includes(S.rkCls) ? S.rkCls : CLASSES[0];
+    const tierOf = c => (by === 'atk' ? c.atk : by === 'def' ? c.def : c.yt);
+    const arr = sortChamps(champs.filter(c => c.cls === cls && (!S.rk7 || c.rar === '7★')), by);
+    // agrupar por tier
+    const groupsArr = [];
+    for (const c of arr) {
+      const t = none(tierOf(c)) ? '' : tierOf(c);
+      let g = groupsArr[groupsArr.length - 1];
+      if (!g || g.t !== t) { g = { t, items: [] }; groupsArr.push(g); }
+      g.items.push(c);
+    }
+    let pos = 0;
+    view.innerHTML = `
+      <div class="row rk-cls">${CLASSES.map(k => `<button class="toggle ${k === cls ? 'on' : ''}" data-rkcls="${esc(k)}" style="${ccVar(k)}">${esc(k)}</button>`).join('')}</div>
+      <div class="seg">${RK_BY.map(([k, l]) => `<button data-rkby="${k}" class="${by === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="count"><span>${arr.length} campeones ${esc(cls)}</span><button class="toggle ${S.rk7 ? 'on' : ''}" data-rk7>Solo 7★</button></div>
+      <p class="hint">${esc(RK_SRC[by])}</p>
+      ${groupsArr.map(g => `<h3 class="tier-head">${g.t ? tierHtml(g.t) : '<span class="tier">–</span>'}<span>${g.t ? `Tier ${esc(g.t)}` : 'Sin valorar'}</span><small>${g.items.length}</small></h3>
+        <ul class="list">${g.items.map(c => { pos++; return `<li><a class="citem" href="${champHref(c)}"><span class="pos">${g.t ? pos : ''}</span>${avatar(c)}<span class="meta"><div class="nm">${esc(c.name)}</div>
+          <div class="sub"><span>${esc(c.rar)}</span>${RK_BY.filter(([k]) => k !== by).map(([k, l]) => `<span>${l} ${esc(none(k === 'atk' ? c.atk : k === 'def' ? c.def : c.yt) ? '–' : (k === 'atk' ? c.atk : k === 'def' ? c.def : c.yt))}</span>`).join('')}</div></span></a></li>`; }).join('')}</ul>`).join('')}`;
+  }
+  view.addEventListener('click', e => {
+    const a = e.target.closest('[data-rkcls]');
+    if (a) { S.rkCls = a.dataset.rkcls; saveState(); viewRanking(); return; }
+    const b = e.target.closest('[data-rkby]');
+    if (b) { S.rkBy = b.dataset.rkby; saveState(); viewRanking(); return; }
+    if (e.target.closest('[data-rk7]')) { S.rk7 = !S.rk7; saveState(); viewRanking(); }
+  });
+
   // ---------- vista: info ----------
   function viewInfo() {
     setTitle('Info', false);
@@ -647,9 +925,10 @@
     if (lastHash) scrollMem[lastHash] = window.scrollY;
     const [, sec, arg] = h.match(/^#\/([^/]+)\/?(.*)$/) || [, 'buscar', ''];
     const a = decodeURIComponent(arg || '');
-    const tab = { buscar: 'buscar', c: 'buscar', equipo: 'equipo', reliquias: 'reliquias', rb: 'reliquias', rs: 'reliquias', info: 'info' }[sec] || 'buscar';
+    const tab = { buscar: 'buscar', c: 'buscar', ranking: 'ranking', equipo: 'equipo', reliquias: 'reliquias', rb: 'reliquias', rs: 'reliquias', info: 'info' }[sec] || 'buscar';
     document.querySelectorAll('.tabbar a').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
     if (sec === 'c') viewChamp(a);
+    else if (sec === 'ranking') viewRanking();
     else if (sec === 'equipo') viewTeam();
     else if (sec === 'reliquias') viewRelics();
     else if (sec === 'rb') viewBattlecast(a);

@@ -64,10 +64,20 @@ if (Test-Path $dj) { $champNames = (Get-Content $dj -Raw -Encoding UTF8 | Conver
 $alias = @{ 'stunned' = 'Stun'; 'stuns' = 'Stun'; 'nullified' = 'Nullify'; 'evasion' = 'Evade'; 'regen' = 'Regeneration'; 'phase' = 'Phasing or Phase';
   'resist physical' = 'Physical Resistance'; 'resist energy' = 'Energy Resistance'; 'roots' = 'Root'; 'rooted' = 'Root'; 'power locked' = 'Power Lock';
   'armor broken' = 'Armor Break'; 'incinerated' = 'Incinerate'; 'poisoned' = 'Poison'; 'shocked' = 'Shock'; 'bleeding' = 'Bleed'; 'heal blocked' = 'Heal Block';
-  'special locked' = 'Special Lock'; 'speciallock' = 'Special Lock'; 'power burned' = 'Power Burn'; 'power drained' = 'Power Drain'; 'slowed' = 'Slow'; 'staggered' = 'Stagger'; 'feared' = 'Fear' }
+  'special locked' = 'Special Lock'; 'speciallock' = 'Special Lock'; 'power burned' = 'Power Burn'; 'power drained' = 'Power Drain'; 'slowed' = 'Slow'; 'staggered' = 'Stagger'; 'feared' = 'Fear'
+  # sinónimos y plurales vistos en los kits (revisión del 12/11/2026)
+  'crit resistance' = 'Critical Resistance'; 'shock resist' = 'Shock Resistance'; 'degen' = 'Degeneration'; 'petrified' = 'Petrify'
+  'purified' = 'Purify'; 'invisible' = 'Invisibility'; 'disintegrate' = 'Disintegration'; 'suppress' = 'Suppression'
+  'instantly power drain' = 'Power Drain'; 'arcane fonts' = 'Arcane Font'; 'mind blasts' = 'Mind Blast'; 'porker poppers' = 'Porker Popper'
+  'peter porker power popper' = 'Porker Popper'; 'pym particles' = 'Pym Particle'; 'soul wisps' = 'Soul Wisp'
+  'inflict carnage bomb' = 'Carnage Bomb'; 'random carnage bomb' = 'Carnage Bomb'; 'nullify spider-seal' = 'Spider-Seal'; 'nullifying spider-seal' = 'Spider-Seal'
+  'cross-fight devolve' = 'Devolve'; 'cross-fight suppression' = 'Suppression'; 'severe power sting' = 'Power Sting'; 'severe rupture' = 'Rupture'
+  'severe wither' = 'Wither'; 'severe fumble' = 'Fumble'; 'mind blast' = 'Mind Blast' }
 # Palabras sueltas que no son efectos
 $junk = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 'Opponent Opponents Gain Heal Whenever Mastery Resistance Sting Drain Rating Lock Shield Steal True Opponent Once Inflict Burn Detonation Detonate Intercepts Interruption Damage-Over-Time Pre-Fight Direct Guaranteed Locked Efficiency Cosmic Psionic Non-Damaging Proficiency Momentum Resolve Mutation Iso Symbiote Dialed Persuasion Then Until Whilst Also Afterwards Additionally Otherwise Instead'.Split(' ') | ForEach-Object { [void]$junk.Add($_) }
+# Verbos, nombres de personas y fragmentos sueltos que no son efectos (revisión del 12/11/2026)
+'Lowers Make Steals Breaks Random Ranks Prevent Ignore Cause Active Attack Blocks Locks Struck Inflicted Extend Meter Hour Esp Tony Laura Gwen Frank Ohnn Death Energy Mystical Tactical Telepath Dimension Dragon Severe Paused Clues Strikers Seed Soul Morph Ego Solar Cerebro Dormammu Agility Dexterity Analysis Guidance Investigation Protocol Absorb Focus Creep Hate Hater Placebo Dossier Gadget Hydration Careful Rout Om'.Split(' ') | ForEach-Object { [void]$junk.Add($_) }
 function Normalize([string]$n) {
   if (-not $n) { return $null }
   $n = $n -replace '^(?i)(Passively|Whenever) ', ''
@@ -76,6 +86,7 @@ function Normalize([string]$n) {
   if ($junk.Contains($n)) { return $null }
   foreach ($cn in $champNames) { if ($n.StartsWith($cn)) { return $null } }
   if ($n -notmatch ' ' -and $n -match 'ing$') { return $null }     # «Damaging», «Striking», «Intercepting»…
+  if ($n -match '(?i)\bMastery$|^Accuracy of |^Bursts of |^Knock(ed|ing) |^Crowd |^Purifies |^Slowed |^Aturdimiento pasivo$') { return $null }   # maestrías y fragmentos
   if ($alias.ContainsKey($n.ToLowerInvariant())) { $n = $alias[$n.ToLowerInvariant()] }
   $n = $n -replace "['’]s$", ''                                   # posesivos: «Storm's»
   if ($n -cmatch '^[A-Z\s\-]+$') { $n = $ti.ToTitleCase($n.ToLowerInvariant()) }   # GAMMA RAGE -> Gamma Rage

@@ -3,12 +3,17 @@
   los reduce a 128 px y los guarda en img\. Genera data\images.js con el
   mapa  nombre -> archivo  que usa la app (los que falten muestran las iniciales).
 
-  Uso:  powershell -ExecutionPolicy Bypass -File scripts\download-images.ps1 [-Force]
+  Uso:  powershell -ExecutionPolicy Bypass -File scripts\download-images.ps1 [-Force] [-All]
+
+  Por defecto SOLO descarga los campeones nuevos (los que no están en data\images.js): los retratos
+  antiguos ya están en GitHub y la carpeta img\ local puede estar vacía para ahorrar espacio.
+  -All  vuelve a descargar todos los que falten en img\ (comportamiento antiguo).
+  -Force  sobrescribe aunque el archivo exista.
 
   Los retratos son propiedad de Kabam / Marvel: úsalos solo para uso personal.
   Si un campeón no tiene imagen, la app muestra sus iniciales.
 #>
-param([switch]$Force, [int]$Size = 128)
+param([switch]$Force, [switch]$All, [int]$Size = 128)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Drawing
@@ -51,10 +56,19 @@ function Get-FileSlug([string]$s) {
 }
 
 $manifest = [ordered]@{}
-$ok = 0; $fail = @()
+# Retratos ya publicados (data\images.js): se conservan en el mapa aunque no estén en img\ local
+$known = @{}
+$imgJs = Join-Path $root 'data\images.js'
+if (Test-Path $imgJs) {
+  $prev = ([IO.File]::ReadAllText($imgJs, [Text.Encoding]::UTF8) -replace '^self.MCOC_IMG=', '' -replace ';\s*$', '') | ConvertFrom-Json
+  foreach ($p in $prev.PSObject.Properties) { $known[$p.Name] = $p.Value }
+}
+$ok = 0; $fail = @(); $new = @()
 for ($i = 1; $i -lt $rows.Count; $i++) {
   $name = $rows[$i][0]
   if (-not $name) { continue }
+  if (-not $All -and -not $Force -and $known.ContainsKey($name)) { $manifest[$name] = $known[$name]; continue }
+  $new += $name
   $slug = $null
   if ($alias.ContainsKey($name)) { $slug = $alias[$name] }
   elseif ($links."$i,17") { $slug = ($links."$i,17" -split '/')[-1] }
@@ -106,5 +120,6 @@ for ($i = 1; $i -lt $rows.Count; $i++) {
 
 $json = $manifest | ConvertTo-Json -Compress
 [IO.File]::WriteAllText((Join-Path $root 'data\images.js'), "self.MCOC_IMG=$json;", (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "OK: $ok imagenes. Sin imagen: $($fail.Count)"
+Write-Host "OK: $ok imagenes descargadas/comprobadas ($($manifest.Count) en el mapa). Sin imagen: $($fail.Count)"
+if ($new.Count) { Write-Host "Campeones nuevos procesados: $($new -join ', ')" } else { Write-Host 'No hay campeones nuevos: no se ha descargado nada.' }
 if ($fail.Count) { $fail | ForEach-Object { Write-Host "  - $_" } }

@@ -32,6 +32,18 @@
   }
   const list = v => splitTop(v, ', ');
   const groups = v => splitTop(v, '; ');
+  const items = v => groups(v).flatMap(list);   // listas que a veces usan «; » en vez de «, »
+  const synLabel = s => (s.imm ? `${s.e} (inmunidad)` : s.e);
+  // «Efecto (dónde)» de las inmunidades condicionales. Algunos efectos llevan paréntesis en el propio nombre
+  // («Atravesar (Phasing)», «todos los perjuicios (debuffs)»…): solo el último paréntesis es la condición, y
+  // si el efecto es uno de esos, se conserva entero.
+  const NAME_PAREN = /^(debuffs|prowess|taunt|miss|daunted|ambush|death|perjuicio|no puede recibir buffs)$/i;
+  function splitCond(s) {
+    const m = s.match(/^(.*\S)\s*\(([^()]*)\)$/);
+    if (!m) return { e: s, w: '' };
+    if (NAME_PAREN.test(m[2]) || (/^phasing$/i.test(m[2]) && /^atravesar$/i.test(m[1]))) return { e: s, w: '' };
+    return { e: m[1], w: m[2] };
+  }
 
   function rowsOf(name) {
     const sh = RAW.sheets[name];
@@ -62,28 +74,29 @@
       const c = {
         name: r['Campeón'], cls: r['Clase'], rar: r['Rareza máx.'],
         yt: r['Tier youtubers'], atk: r['Guide Blog ataque'], def: r['Guide Blog defensa'],
-        immP: list(r['Inmunidades permanentes']),
-        immC: list(r['Inmunidades condicionales']).map(s => {
-          const m = s.match(/^(.*?)\s*\((.*)\)$/);
-          return m ? { e: m[1], w: m[2] } : { e: s, w: '' };
-        }),
-        immU: list(r['Inmunidades no confirmadas']),
-        res: list(r['Resistencias pasivas']).map(s => {
-          const m = s.match(/menos daño de\s+(.+)$/i) || s.match(/^Resistencia a\s+(.+?)(\s+\d.*)?$/i);
+        immP: items(r['Inmunidades permanentes']),
+        immC: items(r['Inmunidades condicionales']).map(splitCond),
+        immU: items(r['Inmunidades no confirmadas']),
+        // «20% menos daño de X», «Resistencia a X», «60% de resistencia a X», «resistencia parcial a X» -> efecto X
+        res: groups(r['Resistencias pasivas']).flatMap(list).map(s => {
+          const m = s.match(/menos daño de\s+(.+)$/i) || s.match(/^(?:\d+\s*%\s*de\s+)?resistencia(?:\s+parcial)?\s+a\s+(.+?)(\s+\d.*)?$/i);
           return { e: m ? m[1] : s, txt: s };
         }),
-        prov: list(r['Efectos que provoca al rival']),
-        gain: list(r['Mejoras/efectos que obtiene']),
-        other: list(r['Otras mecánicas']),
+        prov: items(r['Efectos que provoca al rival']),
+        gain: items(r['Mejoras/efectos que obtiene']),
+        other: items(r['Otras mecánicas']),
         pas: groups(r['Efectos pasivos (siempre activos)']).map(g => {
           const k = g.indexOf(': ');
           return k > 0 ? { t: g.slice(0, k), items: list(g.slice(k + 2)) } : { t: 'Pasivo', items: list(g) };
         }),
+        // «Veneno (inmunidad) con X» -> efecto «Veneno», marcado como inmunidad que da la sinergia
         syn: groups(r['Por sinergia']).map(g => {
           const k = g.indexOf(' con ');
-          return k > 0 ? { e: g.slice(0, k), with: list(g.slice(k + 5)) } : { e: g, with: [] };
+          const raw = k > 0 ? g.slice(0, k) : g;
+          const imm = /\s*\(inmunidad\)$/i.test(raw);
+          return { e: raw.replace(/\s*\(inmunidad\)$/i, ''), imm, with: k > 0 ? list(g.slice(k + 5)) : [] };
         }),
-        key: list(r['Habilidades clave (fichas parciales)']),
+        key: items(r['Habilidades clave (fichas parciales)']),
         ficha: r['Ficha'],
         url: links[`${r._i},17`] || (/^https?:/.test(r['Enlace texto completo']) ? r['Enlace texto completo'] : ''),
         kit: [], bc: '', scP: '', scN: '', adv: '',
@@ -215,6 +228,7 @@
     c.key.forEach(e => add(e, 'key'));
   }
   const effectLabel = k => (effects.get(k) || { label: k }).label;
+  self.MCOC_DEBUG = { effects, champs };   // para revisar los datos desde la consola del navegador
 
   // ---------- estado ----------
   const S = Object.assign({ q: '', filters: [], cls: [], rar: '', sort: 'yt', relSeg: 'bc', bestUse: 'atk', bestCls: '', best7: false, rkCls: 'Todas', rkBy: 'gen', rk7: false },
@@ -420,7 +434,7 @@
     setTitle(c.name, true);
     const inTeam = team.includes(c.name);
     const bc = c.bc ? bcOf(c.bc) : null;
-    const synHtml = c.syn.length ? c.syn.map(s => `<div class="syn">${effChip(s.e, 'buf')} con ${s.with.map(w => {
+    const synHtml = c.syn.length ? c.syn.map(s => `<div class="syn">${effChip(s.e, s.imm ? 'ok' : 'buf', 'any', s.imm ? ' <small>(inmunidad)</small>' : '')} con ${s.with.map(w => {
       const p = findChamp(w); return p ? `<a href="${champHref(p)}">${esc(w)}</a>` : esc(w);
     }).join(', ')}</div>`).join('') : '<p class="empty">—</p>';
     const kitHtml = c.kit.length ? c.kit.map(k => `<details class="kit"><summary>${esc(k.part)} ${k.pas ? '<span class="pas">PASIVA</span>' : ''}</summary>
@@ -531,7 +545,7 @@
   };
   champs.forEach(c => c.syn.forEach(s => s.with.forEach(w => {
     const p = findChamp(w);
-    if (p && p !== c) { addSyn(c.name, p.name, s.e); addSyn(p.name, c.name, s.e); }
+    if (p && p !== c) { addSyn(c.name, p.name, synLabel(s)); addSyn(p.name, c.name, synLabel(s)); }
   })));
   // Inmunidades «clave» (las de los nodos más habituales) que tiene cada campeón (siempre o condicional)
   const KEY_IMM = new Map(QUICK_IMM.map(e => [norm(e), e]));
@@ -747,13 +761,13 @@
       const inner = [], outer = new Map();
       members.forEach(c => c.syn.forEach(s => s.with.forEach(w => {
         const p = findChamp(w);
-        if (p && team.includes(p.name)) inner.push(`<b>${esc(c.name)}</b> + <b>${esc(p.name)}</b>: ${esc(s.e)}`);
-        else if (p) { if (!outer.has(p.name)) outer.set(p.name, { p, items: [] }); outer.get(p.name).items.push(`${s.e} (con ${c.name})`); }
+        if (p && team.includes(p.name)) inner.push(`<b>${esc(c.name)}</b> + <b>${esc(p.name)}</b>: ${esc(synLabel(s))}`);
+        else if (p) { if (!outer.has(p.name)) outer.set(p.name, { p, items: [] }); outer.get(p.name).items.push(`${synLabel(s)} (con ${c.name})`); }
       })));
       // también sinergias que otros declaran hacia miembros del equipo
       members.forEach(c => champs.forEach(o => {
         if (team.includes(o.name)) return;
-        o.syn.forEach(s => { if (s.with.some(w => findChamp(w) === c)) { if (!outer.has(o.name)) outer.set(o.name, { p: o, items: [] }); outer.get(o.name).items.push(`${s.e} (con ${c.name})`); } });
+        o.syn.forEach(s => { if (s.with.some(w => findChamp(w) === c)) { if (!outer.has(o.name)) outer.set(o.name, { p: o, items: [] }); outer.get(o.name).items.push(`${synLabel(s)} (con ${c.name})`); } });
       }));
       const outerArr = [...outer.values()].sort((a, b) => b.items.length - a.items.length || rank(a.p.yt) - rank(b.p.yt)).slice(0, 12);
       const innerU = [...new Set(inner)];

@@ -86,10 +86,29 @@
         key: list(r['Habilidades clave (fichas parciales)']),
         ficha: r['Ficha'],
         url: links[`${r._i},17`] || (/^https?:/.test(r['Enlace texto completo']) ? r['Enlace texto completo'] : ''),
-        kit: [], bc: '', scP: '', scN: '', adv: ''
+        kit: [], bc: '', scP: '', scN: '', adv: '',
+        gen: '', genScore: null, genPos: null, nOps: 0, agree: '', genDef: '', ops: {}
       };
       champs.push(c);
       byName.set(c.name, c);
+    }
+    // Tier list general (consenso de varias fuentes; hoja generada por scripts/update-tiers.ps1)
+    if (RAW.sheets['Tier list general']) {
+      for (const r of rowsOf('Tier list general')) {
+        const c = byName.get(r['Campeón']);
+        if (!c) continue;
+        const num = v => (none(v) || isNaN(+v) ? null : +v);
+        c.gen = none(r['Tier general']) ? '' : r['Tier general'];
+        c.genScore = num(r['Nota general (0-100)']);
+        c.genPos = num(r['Puesto']);
+        c.nOps = num(r['Nº opiniones']) || 0;
+        c.agree = none(r['Acuerdo']) ? '' : r['Acuerdo'];
+        c.genDef = none(r['Tier general defensa']) ? '' : r['Tier general defensa'];
+        c.ops = {
+          Vega: num(r['Vega']), Lagacy: num(r['Lagacy']), MetalSonicDude: num(r['MetalSonicDude']), Seatin: num(r['Seatin']),
+          scAtk: none(r['MCOC Scout ataque']) ? '' : r['MCOC Scout ataque'], scDef: none(r['MCOC Scout defensa']) ? '' : r['MCOC Scout defensa']
+        };
+      }
     }
     for (const r of rowsOf('Mapa de habilidades')) {
       const c = byName.get(r['Campeón']);
@@ -198,7 +217,7 @@
   const effectLabel = k => (effects.get(k) || { label: k }).label;
 
   // ---------- estado ----------
-  const S = Object.assign({ q: '', filters: [], cls: [], rar: '', sort: 'yt', relSeg: 'bc', bestUse: 'atk', bestCls: '', best7: false, rkCls: 'Cósmico', rkBy: 'yt', rk7: false },
+  const S = Object.assign({ q: '', filters: [], cls: [], rar: '', sort: 'yt', relSeg: 'bc', bestUse: 'atk', bestCls: '', best7: false, rkCls: 'Todas', rkBy: 'gen', rk7: false },
     store.get('mcoc-state', {}));
   S.q = '';
   let team = store.get('mcoc-team', []).filter(n => byName.has(n));
@@ -213,7 +232,21 @@
   }
   const clsTag = cls => `<span class="cls" style="${ccVar(cls)}">${esc(cls)}</span>`;
   const champHref = c => `#/c/${encodeURIComponent(c.name)}`;
-  const tiersMini = c => `<span class="tiers">${tierHtml(c.yt)}</span>`;
+  const tiersMini = c => `<span class="tiers" title="Tier general (consenso)">${tierHtml(c.gen || c.yt)}</span>`;
+  const AGREE_TXT = { Alto: 'las fuentes coinciden', Medio: 'algo de discrepancia', Bajo: 'opiniones muy distintas' };
+  // nota 0-100 -> letra, con las franjas de mcoc.app (las mismas que usa la hoja «Tier list general»)
+  const scoreTier = v => v == null ? '' : v >= 96 ? 'S+' : v >= 86 ? 'S' : v >= 72 ? 'A' : v >= 60 ? 'B' : v >= 46 ? 'C' : v >= 30 ? 'D' : 'F';
+  function opinionsHtml(c) {
+    const rows = [
+      ['Vega', 'YouTube (vía mcoc.app)', c.ops.Vega], ['Lagacy', 'YouTube (vía mcoc.app)', c.ops.Lagacy],
+      ['MetalSonicDude', 'YouTube (vía mcoc.app)', c.ops.MetalSonicDude], ['Seatin', 'YouTube (vía mcoc.app)', c.ops.Seatin]
+    ].map(([n, src, v]) => `<tr><th>${n}<br><small>${src}</small></th><td>${v == null ? '<span class="empty">sin valorar</span>' : `${tierHtml(scoreTier(v))} <small>${v}/100</small>`}</td></tr>`);
+    rows.push(`<tr><th>MCOC Guide Blog<br><small>CaptainRaghu</small></th><td>${none(c.atk) && none(c.def) ? '<span class="empty">sin valorar</span>' : `${tierHtml(c.atk, 'Atq')} ${tierHtml(c.def, 'Def')}`}</td></tr>`);
+    if (none(c.atk) && (c.ops.scAtk || c.ops.scDef)) {
+      rows.push(`<tr><th>MCOC Scout<br><small>sustituye al Guide Blog</small></th><td>${tierHtml(c.ops.scAtk === 'A++' ? 'S+' : c.ops.scAtk, 'Atq')} ${tierHtml(c.ops.scDef, 'Def')}</td></tr>`);
+    }
+    return `<table class="tbl ops">${rows.join('')}</table>`;
+  }
 
   function champItem(c, extra = '') {
     return `<li><a class="citem" href="${champHref(c)}">${avatar(c)}<span class="meta"><div class="nm">${esc(c.name)}</div>
@@ -246,7 +279,8 @@
     return true;
   }
   function sortChamps(arr, by) {
-    const k = by === 'atk' ? c => [rank(c.atk), rank(c.yt)] : by === 'def' ? c => [rank(c.def), rank(c.yt)] : by === 'name' ? null : c => [rank(c.yt), rank(c.atk)];
+    const k = by === 'gen' ? c => [rank(c.gen) * 1000 + (c.genScore == null ? 999 : -c.genScore), -c.nOps]
+      : by === 'atk' ? c => [rank(c.atk), rank(c.yt)] : by === 'def' ? c => [rank(c.def), rank(c.yt)] : by === 'name' ? null : c => [rank(c.yt), rank(c.atk)];
     return arr.sort((a, b) => {
       if (k) { const x = k(a), y = k(b); if (x[0] !== y[0]) return x[0] - y[0]; if (x[1] !== y[1]) return x[1] - y[1]; }
       return a.name.localeCompare(b.name);
@@ -282,7 +316,7 @@
           <div class="row"><label>Rareza</label>${['', '7★', '6★'].map(r => `<button class="toggle ${S.rar === r ? 'on' : ''}" data-rar="${r}">${r || 'Todas'}</button>`).join('')}</div>
           <div class="row"><label>Ordenar</label>
             <select class="sel" id="sort">
-              ${[['yt', 'Tier youtubers'], ['atk', 'Ataque (Guide Blog)'], ['def', 'Defensa (Guide Blog)'], ['name', 'Nombre']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}
+              ${[['gen', 'Tier general (consenso)'], ['yt', 'Tier youtubers'], ['atk', 'Ataque (Guide Blog)'], ['def', 'Defensa (Guide Blog)'], ['name', 'Nombre']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -398,10 +432,17 @@
         <div class="sub">${clsTag(c.cls)}<span>${esc(c.rar)}</span><span>Ficha ${esc((c.ficha || '').toLowerCase())}</span></div>
       </div></div>
       <div class="tierbox">
+        <div>${tierHtml(c.gen)}<p>General${c.genPos ? ` · nº ${c.genPos}` : ''}</p></div>
         <div>${tierHtml(c.yt)}<p>Youtubers</p></div>
         <div>${tierHtml(c.atk)}<p>Ataque (GB)</p></div>
         <div>${tierHtml(c.def)}<p>Defensa (GB)</p></div>
       </div>
+
+      <details class="card opbox"><summary><h3>Comparar tier lists</h3>
+        <small>${c.nOps ? `${c.nOps} opinion${c.nOps === 1 ? '' : 'es'}${c.genScore != null ? ` · nota ${c.genScore}/100` : ''}${c.agree ? ` · acuerdo ${c.agree.toLowerCase()} (${AGREE_TXT[c.agree]})` : ''}` : 'Sin valoraciones todavía'}</small></summary>
+        ${opinionsHtml(c)}
+        <p class="hint">El tier general es la media de todas las opiniones de ataque (todas las clases juntas). Detalles en Info → Leyenda y fuentes.</p>
+      </details>
 
       <section class="card"><h3>Reliquia recomendada</h3>
         ${c.bc ? `<a class="relic" href="#/rb/${encodeURIComponent(bc ? bc.key : c.bc)}"><span class="ico" style="${ccVar(bc ? bc.cls : c.cls)}">⚔</span>
@@ -860,18 +901,20 @@
   }
 
   // ---------- vista: ranking por clase ----------
-  const RK_BY = [['yt', 'Youtubers'], ['atk', 'Ataque'], ['def', 'Defensa']];
+  const RK_BY = [['gen', 'General'], ['yt', 'Youtubers'], ['atk', 'Ataque'], ['def', 'Defensa']];
   const RK_SRC = {
+    gen: 'Consenso de hasta 5 opiniones de ataque: Vega, Lagacy, MetalSonicDude y Seatin (vía mcoc.app) y MCOC Guide Blog. Cada una se pasa a una nota 0-100 y se hace la media. ⚠ = las fuentes discrepan mucho.',
     yt: 'Media de Vega, Lagacy, MetalSonicDude y Seatin (mcoc.app).',
     atk: 'MCOC Guide Blog, ataque (S+ … E). No valora Deathless ni Stellar-Forged.',
     def: 'MCOC Guide Blog, defensa (S … D). No valora Deathless ni Stellar-Forged.'
   };
+  const ALL = 'Todas';
   function viewRanking() {
-    setTitle('Ranking por clase', false);
-    const by = S.rkBy, cls = CLASSES.includes(S.rkCls) ? S.rkCls : CLASSES[0];
-    const tierOf = c => (by === 'atk' ? c.atk : by === 'def' ? c.def : c.yt);
-    const arr = sortChamps(champs.filter(c => c.cls === cls && (!S.rk7 || c.rar === '7★')), by);
-    // agrupar por tier
+    const by = RK_BY.some(([k]) => k === S.rkBy) ? S.rkBy : 'gen';
+    const cls = S.rkCls === ALL || CLASSES.includes(S.rkCls) ? S.rkCls : ALL;
+    setTitle(cls === ALL ? 'Tier list general' : 'Ranking por clase', false);
+    const tierOf = c => (by === 'gen' ? c.gen : by === 'atk' ? c.atk : by === 'def' ? c.def : c.yt);
+    const arr = sortChamps(champs.filter(c => (cls === ALL || c.cls === cls) && (!S.rk7 || c.rar === '7★')), by);    // agrupar por tier
     const groupsArr = [];
     for (const c of arr) {
       const t = none(tierOf(c)) ? '' : tierOf(c);
@@ -880,14 +923,26 @@
       g.items.push(c);
     }
     let pos = 0;
+    const valOf = (k, c) => (k === 'gen' ? c.gen : k === 'atk' ? c.atk : k === 'def' ? c.def : c.yt);
+    const subOf = c => {
+      const parts = [];
+      if (cls === ALL) parts.push(clsTag(c.cls));
+      parts.push(`<span>${esc(c.rar)}</span>`);
+      if (by === 'gen') {
+        parts.push(`<span>${c.genScore != null ? `${c.genScore}/100 · ${c.nOps} op.` : 'sin datos'}</span>`);
+        if (c.agree === 'Bajo') parts.push('<span class="disc" title="Las fuentes discrepan mucho">⚠ discrepan</span>');
+      }
+      RK_BY.filter(([k]) => k !== by && (by !== 'gen' || k !== 'yt')).forEach(([k, l]) => parts.push(`<span>${l} ${esc(none(valOf(k, c)) ? '–' : valOf(k, c))}</span>`));
+      return parts.join('');
+    };
     view.innerHTML = `
-      <div class="row rk-cls">${CLASSES.map(k => `<button class="toggle ${k === cls ? 'on' : ''}" data-rkcls="${esc(k)}" style="${ccVar(k)}">${esc(k)}</button>`).join('')}</div>
+      <div class="row rk-cls"><button class="toggle ${cls === ALL ? 'on' : ''}" data-rkcls="${ALL}" style="--cc:#e8e8ee">Todas</button>${CLASSES.map(k => `<button class="toggle ${k === cls ? 'on' : ''}" data-rkcls="${esc(k)}" style="${ccVar(k)}">${esc(k)}</button>`).join('')}</div>
       <div class="seg">${RK_BY.map(([k, l]) => `<button data-rkby="${k}" class="${by === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-      <div class="count"><span>${arr.length} campeones ${esc(cls)}</span><button class="toggle ${S.rk7 ? 'on' : ''}" data-rk7>Solo 7★</button></div>
+      <div class="count"><span>${arr.length} campeones${cls === ALL ? '' : ' ' + esc(cls)}</span><button class="toggle ${S.rk7 ? 'on' : ''}" data-rk7>Solo 7★</button></div>
       <p class="hint">${esc(RK_SRC[by])}</p>
       ${groupsArr.map(g => `<h3 class="tier-head">${g.t ? tierHtml(g.t) : '<span class="tier">–</span>'}<span>${g.t ? `Tier ${esc(g.t)}` : 'Sin valorar'}</span><small>${g.items.length}</small></h3>
         <ul class="list">${g.items.map(c => { pos++; return `<li><a class="citem" href="${champHref(c)}"><span class="pos">${g.t ? pos : ''}</span>${avatar(c)}<span class="meta"><div class="nm">${esc(c.name)}</div>
-          <div class="sub"><span>${esc(c.rar)}</span>${RK_BY.filter(([k]) => k !== by).map(([k, l]) => `<span>${l} ${esc(none(k === 'atk' ? c.atk : k === 'def' ? c.def : c.yt) ? '–' : (k === 'atk' ? c.atk : k === 'def' ? c.def : c.yt))}</span>`).join('')}</div></span></a></li>`; }).join('')}</ul>`).join('')}`;
+          <div class="sub">${subOf(c)}</div></span></a></li>`; }).join('')}</ul>`).join('')}`;
   }
   view.addEventListener('click', e => {
     const a = e.target.closest('[data-rkcls]');
@@ -914,7 +969,7 @@
       </div></details>
       <details class="panel"><summary>Guía rápida de reliquias</summary><div class="body">${tbl('Guía de reliquias')}</div></details>
       <details class="panel"><summary>Leyenda y fuentes</summary><div class="body">${tbl('Leyenda')}</div></details>
-      <p class="legal"><b>Proyecto de fans, no afiliado a Kabam ni a Marvel.</b> MARVEL Batalla de Superhéroes, los nombres de los campeones y sus imágenes son marcas y propiedad de Kabam Games y Marvel. Tiers: opiniones de sus autores (mcoc.app — Vega, Lagacy, MetalSonicDude, Seatin; MCOC Guide Blog — CaptainRaghu). Kits, inmunidades y retratos: <a href="https://mcochub.insaneskull.com" target="_blank" rel="noopener">MCOCHUB</a>. Reliquias recomendadas: <a href="https://mcocscout.com/relics" target="_blank" rel="noopener">MCOC Scout</a>.</p>`;
+      <p class="legal"><b>Proyecto de fans, no afiliado a Kabam ni a Marvel.</b> MARVEL Batalla de Superhéroes, los nombres de los campeones y sus imágenes son marcas y propiedad de Kabam Games y Marvel. Tiers: opiniones de sus autores (Vega, Lagacy, MetalSonicDude y Seatin, recopiladas por <a href="https://mcoc.app" target="_blank" rel="noopener">mcoc.app</a>; <a href="https://www.mcocguideblog.com/p/mcoc-offense-and-defense-tier-list.html" target="_blank" rel="noopener">MCOC Guide Blog</a> — CaptainRaghu; <a href="https://mcocscout.com" target="_blank" rel="noopener">MCOC Scout</a> para los que el Guide Blog no valora). El tier general es una media calculada por esta app. Kits, inmunidades y retratos: <a href="https://mcochub.insaneskull.com" target="_blank" rel="noopener">MCOCHUB</a>. Reliquias recomendadas: <a href="https://mcocscout.com/relics" target="_blank" rel="noopener">MCOC Scout</a>.</p>`;
   }
 
   // ---------- enrutado ----------

@@ -46,6 +46,8 @@ Se publica con **GitHub Pages desde la raíz de `main`** (*Settings → Pages �
    <https://codeload.github.com/Shadey1/Mcoc-help/zip/refs/heads/main>, descomprímelo fuera del proyecto y ejecuta
    `powershell -ExecutionPolicy Bypass -File scripts\kit-effects.ps1 -Abilities <ruta>\data\champions\abilities.json`.
    Genera `data/kit-effects.js` (solo nombres de efectos, nunca el texto de los kits). Usa `scripts/glosario.json` para traducir.
+3c. Tiers y tier list general (cada mes, con el Excel cerrado): `powershell -ExecutionPolicy Bypass -File scripts\update-tiers.ps1`
+   (añade `-DryRun` para ver los cambios sin tocar el Excel) y vuelve a ejecutar `excel-to-json.ps1`.
 4. Sube `VERSION` en `sw.js` (p. ej. `mcoc-v2`) para que los móviles descarguen la nueva versión.
 
 ## Fuentes y aviso legal

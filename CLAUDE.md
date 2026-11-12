@@ -21,7 +21,7 @@ Hojas (en este orden):
 | Hoja | Contenido |
 |---|---|
 | **Leyenda** | Significado de columnas, escalas de tier y fuentes. |
-| **Campeones** | 337 filas, una por campeón. |
+| **Campeones** | 338 filas, una por campeón (actualizado el 12/11/2026, ver §9). |
 | **Mapa de habilidades** | ~2.360 filas: una por cada parte del kit de cada campeón (firma, especiales, ataques fuertes…). |
 | **Matriz de inmunidades** | Campeones × 24 inmunidades. Valores: `Sí` (permanente), `Cond.` (condicional), `¿?` (no confirmada), vacío (no / sin datos). Al final, 2 filas con `COUNTIF`. |
 | **Resumen** | Recuentos por clase con fórmulas `COUNTIF(S)` sobre la hoja Campeones. |
@@ -35,7 +35,7 @@ Columnas de **Campeones** (A→R):
 
 - Listas dentro de una celda separadas por `, `; grupos separados por `; `. Vacío se representa con `—`.
 - Clases en español: Cósmico, Mutante, Ciencia, Habilidad (Skill), Tecnología, Místico.
-- `Rareza máx.`: `7★` (279 campeones) o `6★` (58).
+- `Rareza máx.`: `7★` (280 campeones) o `6★` (58).
 - `Ficha`: `Completa` (kit completo de MCOCHUB, ~270) o `Parcial` (solo datos de otras fuentes).
 - Inmunidades condicionales: `Efecto (dónde)`, p. ej. `Aturdimiento (Phasing)`, `X (firma)` = requiere despertar la firma.
 - Columnas de **Mapa de habilidades**: `Campeón | Clase | Rareza máx. | Parte del kit | ¿Pasiva? | Efectos que aparecen`.
@@ -443,3 +443,21 @@ Abomination, Aegon, Agent Venom, Air-Walker, Annihilus, Black Bolt, Black Widow,
 - Stack sugerido (simple y gratis en GitHub Pages): Vite + React + TypeScript, datos en `public/data/champions.json`, despliegue con GitHub Actions a GitHub Pages. Preguntar al usuario antes de elegir.
 - Script reproducible `scripts/excel-to-json` para regenerar el JSON cuando se actualice el Excel.
 - Las tier lists cambian cada mes: diseñar el JSON para poder actualizar tiers sin tocar el resto.
+
+## 9. Actualización del 12/11/2026
+- **Nuevo:** Star-Lord (Kitty Pryde) — Tecnología, 7★ (salió el 09/11/2026), tier A en mcoc.app (solo la valora MetalSonicDude), sin tier en Guide Blog. No está aún en `abilities.json` ni en MCOC Scout: su fila se rellenó a mano a partir del **Champion Spotlight oficial** (WP-JSON `playcontestofchampions.com/wp-json/wp/v2/posts?slug=champion-spotlight-star-lord-kitty-pryde`), que también da las reliquias (Battlecast Vision, Statcast Stark Spidey). Cuando MCOCHUB/Mcoc-help la incluyan, regenerar `kit-effects.js`.
+- **Excluido a propósito:** Summoned Symbioid (clase Universal, 1★ de evento: no existe en 6★/7★).
+- **Tiers mcoc.app cambiados:** Beast F→A, Colossus (AoA) A→B, Ghost Rider (Robbie Reyes) A→B, Hit-Monkey A→S, Mephisto F→D, Vision (Aarkus) C→B. Guide Blog actualizado el 05/11/2026 sin cambios respecto al Excel.
+- MCOCHUB cambió el slug de Captain America (Infinity War): `caiw` → `captainamerica-movie` (enlace corregido).
+- Kits de MCOCHUB (Mcoc-help, importados 09/11/2026) y reliquias de MCOC Scout: sin cambios.
+- Excel se edita con **Excel COM desde PowerShell** (en este PC no hay Python ni Node). Fandom (`static.wikia.nocookie.net`) bloquea descargas con Cloudflare; los retratos nuevos de MCOCHUB vienen en `.webp`, que `System.Drawing` no lee: se convierten con WPF (`PresentationCore`, `BitmapDecoder`).
+- mcoc.app usa nombres cortos: `Carina` = Carina Tivan, `Scarlet Witch` = Scarlet Witch (Sigil), `Spider-Man` = Spider-Man (Classic).
+
+## 10. Tier list general (12/11/2026)
+- Hoja nueva **«Tier list general»** (todas las clases juntas), generada por `scripts/update-tiers.ps1` (Excel COM; también actualiza las columnas de tier de Campeones y Reliquias y la Leyenda). Ejecutarlo cada mes y luego `excel-to-json.ps1` + subir `VERSION` en `sw.js`.
+- Opiniones independientes (hasta 5, todas de ATAQUE): Vega, Lagacy, MetalSonicDude, Seatin (nota 0-100 de cada uno, leída de `mcoc.app/champions/<slug>`) + MCOC Guide Blog. Letras → centro de la franja de mcoc.app (S+≥96, S≥86, A≥72, B≥60, C≥46, D≥30). Media → tier general. Acuerdo por rango (≤20 Alto, ≤40 Medio, >40 Bajo).
+- **MCOC Scout copia el Guide Blog** (300/300 iguales; llama «A++» al S+): solo se usa cuando el Guide Blog no valora al campeón.
+- Las hojas de Google de los 4 youtubers se pueden exportar (`/export?format=xlsx`) pero tienen formatos libres (tiers en columnas, emojis): es más fiable leer mcoc.app.
+- **Descartadas:** gacha.gg (duplicados con notas distintas, Doctor Strange en D, Stark Spidey en C), PocketGamer (Doctor Strange en el último tier, Jack O'Lantern como Místico), MMO Culture (solo ~5 por tier), findingdulcinea/ofzenandcomputing/rosenberryrooms (contenido reciclado, 403).
+- App: pestaña Ranking → «Todas» + «General» (por defecto); en la ficha, tier general con puesto y desplegable «Comparar tier lists».
+- PowerShell + Excel COM: tras asignar texto a `.Value2`, asignar un `object[,]` a `.Value2` falla («no se puede convertir a String»); usar `.Formula = $arr`. Los elementos del array deben ser tipos .NET simples (no PSObject).

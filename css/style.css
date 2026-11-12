@@ -182,7 +182,19 @@ select.sel {
 .hero { display: flex; gap: 14px; align-items: center; margin: 4px 0 14px; }
 .hero h2 { margin: 0 0 4px; font-size: 22px; line-height: 1.15; }
 .hero .sub { color: var(--muted); font-size: 13px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.tierbox { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.tierbox { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.tierbox div:first-child { border-color: var(--accent, #ff8c42); }
+/* Comparar tier lists */
+.opbox > summary { list-style: none; cursor: pointer; }
+.opbox > summary::-webkit-details-marker { display: none; }
+.opbox > summary h3 { display: inline; margin: 0; }
+.opbox > summary h3::after { content: " ▾"; }
+.opbox[open] > summary h3::after { content: " ▴"; }
+.opbox > summary small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.ops { margin-top: 8px; }
+.ops td { vertical-align: middle; }
+.ops td small { color: var(--muted); }
+.sub .disc { color: #ffb020; font-weight: 600; }
 .tierbox div {
   background: var(--bg2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; text-align: center;
 }

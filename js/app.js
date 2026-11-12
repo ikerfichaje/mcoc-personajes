@@ -1006,9 +1006,18 @@
   const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let installPrompt = null;
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isInApp = /FBAN|FBAV|Instagram|WhatsApp|Line\/|Telegram|; wv\)/i.test(navigator.userAgent);
   function updateInstallBtn() {
-    // Se oculta si ya se abre como app instalada; en iPhone no hay aviso del sistema, así que se muestran instrucciones.
-    installBtn.hidden = isStandalone() || !(installPrompt || isIOS);
+    // Siempre visible salvo cuando ya se abre como app instalada. Si el navegador no ofrece la instalación
+    // directa (iPhone, Firefox, Samsung Internet, navegadores dentro de otras apps…), el botón muestra instrucciones.
+    installBtn.hidden = isStandalone();
+  }
+  function installHelp() {
+    if (isInApp) return 'Estás dentro de otra app (WhatsApp, Instagram…). Abre el enlace en Chrome (Android) o Safari (iPhone): menú ⋮ o ··· → «Abrir en el navegador». Después vuelve a pulsar «Instalar».';
+    if (isIOS) return 'En iPhone/iPad: abre esta página en Safari, pulsa Compartir (el cuadrado con la flecha hacia arriba) y elige «Añadir a pantalla de inicio».';
+    if (isAndroid) return 'En Android: abre el menú del navegador (⋮ arriba a la derecha en Chrome, ≡ abajo en Samsung Internet) y elige «Instalar aplicación» o «Añadir a pantalla de inicio». Si no aparece, recarga la página y espera unos segundos. Si ya la tienes instalada, búscala entre tus aplicaciones.';
+    return 'En el ordenador: en Chrome o Edge, pulsa el icono de instalar de la barra de direcciones (una pantalla con una flecha) o menú ⋮ → «Guardar y compartir» → «Instalar página como aplicación». Firefox y Safari de escritorio no permiten instalarla.';
   }
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; updateInstallBtn(); });
   window.addEventListener('appinstalled', () => { installPrompt = null; installBtn.hidden = true; });
@@ -1018,8 +1027,8 @@
       installPrompt.prompt();
       const { outcome } = await installPrompt.userChoice;
       if (outcome === 'accepted') { installPrompt = null; installBtn.hidden = true; }
-    } else if (isIOS) {
-      alertSheet('Para instalarla en el iPhone: abre esta página en Safari, pulsa el botón Compartir (el cuadrado con la flecha hacia arriba) y elige «Añadir a pantalla de inicio».');
+    } else {
+      alertSheet(installHelp());
     }
   });
   updateInstallBtn();

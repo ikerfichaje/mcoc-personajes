@@ -39,7 +39,16 @@
   // si el efecto es uno de esos, se conserva entero.
   const NAME_PAREN = /^(debuffs|prowess|taunt|miss|daunted|ambush|death|perjuicio|no puede recibir buffs)$/i;
   function splitCond(s) {
-    const m = s.match(/^(.*\S)\s*\(([^()]*)\)$/);
+    // busca el paréntesis que abre el último grupo, aunque dentro haya otros paréntesis
+    // («Incinerar (Winchesters Hellfire Rounds (Medium Combo Ender…))»)
+    let m = null;
+    if (s.endsWith(')')) {
+      let depth = 0;
+      for (let i = s.length - 1; i >= 0; i--) {
+        if (s[i] === ')') depth++;
+        else if (s[i] === '(' && --depth === 0) { if (s.slice(0, i).trim()) m = [s, s.slice(0, i).trim(), s.slice(i + 1, -1)]; break; }
+      }
+    }
     if (!m) return { e: s, w: '' };
     if (NAME_PAREN.test(m[2]) || (/^phasing$/i.test(m[2]) && /^atravesar$/i.test(m[1]))) return { e: s, w: '' };
     return { e: m[1], w: m[2] };
@@ -310,7 +319,182 @@
     }).join(' · ')}</div>`;
   }
 
-  const QUICK_IMM = ['Veneno', 'Sangrado', 'Incinerar', 'Descarga', 'Aturdimiento', 'Anular', 'Rotura de armadura', 'Bloqueo de poder', 'Bloqueo de curación', 'Ola de frío', 'Congelación', 'Degeneración'];
+  // Sinónimos para el buscador: palabras coloquiales en español y nombre en inglés del juego -> efecto real.
+  // Las claves son los nombres de los efectos tal como salen en los datos; si alguno no existe, se ignora.
+  const SYNONYMS = {
+    'Descarga': 'shock|electricidad|electrico|electrica|electrocutar|alto voltaje|voltaje|rayo|relampago|corriente|chispa|calambre|electro|trueno',
+    'Neurodescarga': 'neuroshock|descarga neural|electricidad|nervios',
+    'Veneno': 'poison|toxina|toxico|envenenar|ponzona|intoxicar|veneno',
+    'Neurotoxina': 'neurotoxin|toxina|veneno',
+    'Sangrado': 'bleed|sangre|sangrar|hemorragia|cortar|corte|herida',
+    'Herida': 'injury|herir|lesion',
+    'Incinerar': 'incinerate|fuego|quemar|quemadura|llamas|arder|calor|lumbre',
+    'Chamuscado': 'seared|quemado|fuego',
+    'Llama nova': 'nova flame|fuego|llamas',
+    'Ola de frío': 'coldsnap|cold snap|frio|helar|hielo|congelar|congelado',
+    'Congelación': 'frostbite|hielo|frio|escarcha|congelar|congelado',
+    'Aturdimiento': 'stun|aturdir|noquear|ko|atontar|paralizar|inmovilizar',
+    'Anular': 'nullify|quitar mejoras|eliminar mejoras|borrar mejoras|quitar buffs|borrar buffs|dispel',
+    'Tambaleo': 'stagger|tambalear|anular siguiente mejora',
+    'Rotura de armadura': 'armor break|armour break|romper armadura|quitar armadura|bajar armadura',
+    'Armadura destrozada': 'armor shattered|destrozar armadura|romper armadura',
+    'Aumento de armadura': 'armor up|subir armadura|blindaje|defensa|armadura',
+    'Drenaje de poder': 'power drain|quitar poder|drenar poder|drenar energia|quitar barra|barra de poder',
+    'Quema de poder': 'power burn|quemar poder|quemar barra|barra de poder',
+    'Robo de poder': 'power steal|robar poder|robar barra|barra de poder',
+    'Bloqueo de poder': 'power lock|bloquear poder|no gana poder|barra de poder',
+    'Aguijón de poder': 'power sting|barra de poder',
+    'Ganancia de poder': 'power gain|ganar poder|ganar barra|cargar barra|recargar|energia|barra de poder',
+    'Bloqueo de curación': 'heal block|no curar|impedir curacion|anticuracion|sin curacion',
+    'Regeneración': 'regeneration|regen|curar|curacion|sanar|recuperar vida|vida|heal',
+    'Robo de vida': 'life steal|vampiro|chupar vida|drenar vida|curar',
+    'Degeneración': 'degeneration|degen|perder vida|dano continuo',
+    'Ruptura': 'rupture|romper',
+    'Controles invertidos': 'reverse controls|reversed controls|invertir controles|controles al reves|reves',
+    'Sello del destino': 'fate seal|sellar destino|bloquear habilidades',
+    'Delirio': 'delirium|locura|alucinacion|confusion',
+    'Reducción de precisión de habilidades': 'ability accuracy|precision de habilidades|fallar habilidades',
+    'Imbloqueable': 'unblockable|no se puede bloquear|atravesar bloqueo|romper bloqueo|sin bloqueo',
+    'Imparable': 'unstoppable|no se puede interrumpir|super armadura|sin retroceso|no para',
+    'Intocable': 'untouchable|invulnerable|no recibe dano|inmune al dano|intocable',
+    'Esquivar': 'dodge|dodging|esquivar|esquiva|evitar golpes',
+    'Evasión': 'evade|evadir|esquivar|esquiva|evitar golpes',
+    'Atravesar (Phasing)': 'phasing|phase|fase|fantasma|traspasar|atravesar',
+    'Furia': 'fury|mas ataque|aumento de ataque|subir ataque|fuerza|potencia|poder de ataque',
+    'Precisión': 'precision|critico|criticos|probabilidad de critico',
+    'Crueldad': 'cruelty|dano critico|critico|criticos',
+    'Daño crítico': 'critical damage|critico|criticos',
+    'Resistencia a críticos': 'critical resistance|critico|criticos',
+    'Sin críticos': 'no critical|no critico|sin criticos',
+    'Debilidad': 'weakness|debilitar|menos ataque|reducir ataque|bajar ataque',
+    'Vulnerabilidad': 'vulnerability|vulnerable|mas dano recibido',
+    'Fragilidad': 'fragility|fragil',
+    'Lentitud': 'slow|ralentizar|lento|no esquiva',
+    'Provocación (Taunt)': 'taunt|provocar|atraer',
+    'Daño verdadero': 'true damage|ignorar armadura|ignora armadura',
+    'Golpe verdadero': 'true strike|ignorar esquiva|ignora esquiva|ignorar intocable|ignorar evasion',
+    'Precisión verdadera': 'true accuracy|ignorar esquiva|ignora esquiva',
+    'Sentido verdadero': 'true sense|ignorar phasing|ignora phasing|ignorar fase',
+    'Enfoque verdadero': 'true focus',
+    'Penetración física': 'physical penetration|atravesar armadura',
+    'Penetración de energía': 'energy penetration|atravesar resistencia',
+    'Bloqueo perfecto': 'perfect block|bloquear todo|sin dano al bloquear',
+    'Penetración de bloqueo': 'block penetration|atravesar bloqueo',
+    'Escudo de combo': 'combo shield|escudo',
+    'Campo de fuerza': 'force field|escudo|barrera|proteccion',
+    'Indestructible': 'indestructible|invencible|no muere|no puede morir',
+    'Imperecedero': 'undying|revivir|resucitar|no morir|sobrevivir|inmortal|segunda vida',
+    'Inmortalidad': 'immortality|revivir|resucitar|no morir|sobrevivir|inmortal|segunda vida',
+    'Invisibilidad': 'invisibility|invisible|sigilo|camuflaje',
+    'Retroceso': 'knockback|empujar|derribar|tirar al suelo',
+    'Autorreparación': 'self-repair|self repair|reparar|curar',
+    'Agotamiento': 'exhaustion|cansancio|cansar|agotar',
+    'Agotar': 'exhaust|cansancio|cansar',
+    'Fatiga': 'fatigue|cansancio|cansar',
+    'Desorientar': 'disorient|confundir|mareo|marear',
+    'Encanto': 'charm|hechizar|seducir|control mental',
+    'Control mental': 'mind control|controlar mente|telepatia|hipnosis',
+    'Sueño': 'sleep|dormir|dormido',
+    'Petrificar': 'petrify|piedra|convertir en piedra',
+    'Bloqueo de especiales': 'special lock|sin especiales|bloquear especiales|no puede usar especiales',
+    'Desarmar': 'disarm|quitar arma',
+    'Intimidar': 'intimidate|miedo|asustar',
+    'Miedo': 'fear|asustar|terror',
+    'Pánico': 'panic|miedo',
+    'Cobardía': 'cowardice|miedo|cobarde',
+    'Enfurecer': 'infuriate|enfado|enfadar',
+    'Ira': 'rage|enfado|cabreo',
+    'Berserker': 'berserk|furia ciega|descontrol',
+    'Frenesí': 'frenzy|descontrol',
+    'Corrosión': 'corrosion|acido|corroer',
+    'Quemadura ácida': 'acid burn|acido|corroer',
+    'Marcado': 'marked|marcar|marca',
+    'Rastreo': 'tracking|perseguir|seguir',
+    'Detonación de combo': 'combo detonation|explotar|explosion|detonar|bomba',
+    'Detonación de poder': 'power detonation|explotar|explosion|detonar|bomba',
+    'Represalia': 'retribution|devolver dano|venganza',
+    'Reflejo de daño': 'damage reflection|reflejar dano|devolver dano|espinas',
+    'Contragolpe': 'counterpunch|contraataque|contraatacar',
+    'Bloqueo automático': 'auto-block|auto block|autobloqueo|bloquear solo',
+    'Purificar': 'purify|limpiar perjuicios|quitar perjuicios|quitar debuffs|limpiar debuffs',
+    'Limpiar': 'cleanse|limpiar perjuicios|quitar perjuicios|quitar debuffs',
+    'todos los perjuicios (debuffs)': 'debuff|debuffs|perjuicios|estados negativos|efectos negativos',
+    'Desintegración': 'disintegration|desintegrar',
+    'Neutralizar': 'neutralize|neutralizar',
+    'Golpe de refilón': 'glance|glancing|rozar|roce',
+    'Fallo (Miss)': 'miss|fallar|fallo',
+    'Aumento de resistencia': 'resistance up|subir resistencia|resistencia',
+    'Resistencia física': 'physical resistance|resistencia|reducir dano fisico',
+    'Resistencia a energía': 'energy resistance|resistencia|reducir dano de energia',
+    'Daño de energía': 'energy damage|energia',
+    'Daño físico': 'physical damage|golpes',
+    'Daño directo': 'direct damage|dano directo',
+    'Ataques sin contacto': 'non contact attacks|proyectil|disparo|a distancia|sin contacto',
+    'Ataques de contacto': 'contact attacks|cuerpo a cuerpo|contacto',
+    'Adrenalina': 'adrenaline',
+    'Celo': 'zeal',
+    'Envalentonar': 'embolden',
+    'Aptitud': 'aptitude',
+    'Pericia': 'expertise',
+    'Tenacidad': 'tenacity',
+    'Firmeza': 'steadfast',
+    'Coraje': 'grit',
+    'Supresión': 'suppression',
+    'Sofocar': 'stifle',
+    'Socavar': 'undermine',
+    'Hendir': 'sunder',
+    'Marchitar': 'wither',
+    'Atrofia': 'atrophy',
+    'Vacilar': 'falter',
+    'Torpeza': 'fumble',
+    'Enervar': 'enervate',
+    'Obstaculizar': 'hinder',
+    'Tranquilizar': 'tranquilize|calmar|sedar',
+    'Desacelerar': 'decelerate|frenar',
+    'Debilitar': 'debilitate',
+    'Conmoción': 'concussion|golpe en la cabeza',
+    'Trauma': 'trauma',
+    'Tormento': 'torment',
+    'Miseria': 'misery',
+    'Aplastar': 'crush|aplastar',
+    'Pulverizar': 'pulverize',
+    'Inexorable': 'inexorable',
+    'Implacable': 'implacable',
+    'Aguante': 'endurance|resistir',
+    'Reforzar': 'reinforce',
+    'Salvaguarda': 'safeguard|proteger',
+    'Protección': 'protection|proteger',
+    'Vigilancia': 'vigilance',
+    'Confianza': 'confidence',
+    'Astucia': 'cunning',
+    'Instinto': 'instinct',
+    'Vitalidad': 'vitality|vida',
+    'Robótica': 'robotics|robot',
+    'Arena': 'sand'
+  };
+  const synIndex = [];
+  for (const [label, syns] of Object.entries(SYNONYMS)) {
+    const x = effects.get(norm(label));
+    if (x) synIndex.push({ x, syns: syns.split('|').map(norm) });
+  }
+  // efectos cuyo sinónimo encaja con lo escrito: devuelve Map(efecto -> sinónimo que ha encajado)
+  function synonymMatches(q) {
+    const out = new Map();
+    const words = q.split(/\s+/).filter(w => w.length >= 3);
+    for (const { x, syns } of synIndex) {
+      const hit = syns.find(s => s.includes(q) || (s.length >= 4 && q.includes(s)) ||
+        (words.length > 1 && words.every(w => s.split(/\s+/).some(sw => sw.startsWith(w)))));
+      if (hit) out.set(x, { s: hit, score: hit === q ? 3 : hit.includes(q) ? 2 : 1 });
+    }
+    return out;
+  }
+
+  // Todas las inmunidades que aparecen en los datos (permanentes, condicionales o sin confirmar), de más a menos campeones
+  const IMM_CATS = ['imm', 'immc', 'immu'];
+  const QUICK_IMM = [...effects.values()]
+    .map(x => ({ label: x.label, n: [...x.champs].filter(c => [...(c.tags.get(x.key) || [])].some(t => IMM_CATS.includes(t))).length }))
+    .filter(x => x.n > 0)
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label, 'es'));
 
   // ---------- vista: buscar ----------
   function viewSearch() {
@@ -318,7 +502,7 @@
     const nFilt = S.cls.length + (S.rar ? 1 : 0);
     view.innerHTML = `
       <div class="search">
-        <input id="q" type="search" autocomplete="off" placeholder="Nombre o efecto (p. ej. Veneno, Anular…)" value="${esc(S.q)}" aria-label="Buscar">
+        <input id="q" type="search" autocomplete="off" placeholder="Nombre o efecto (p. ej. Veneno, fuego, curar…)" value="${esc(S.q)}" aria-label="Buscar">
         <button class="clear" id="qclear" aria-label="Borrar" ${S.q ? '' : 'hidden'}>×</button>
       </div>
       <div id="suggest"></div>
@@ -373,16 +557,25 @@
     if (q.length < 2) {
       box.innerHTML = (!S.filters.length && !S.q)
         ? `<p class="hint">Escribe un efecto para buscar campeones que lo tengan, o prueba un atajo: <b>inmune a…</b></p>
-           <div class="chips">${QUICK_IMM.map(e => effChip(e, 'ok', 'imm')).join('')}</div>`
+           <div class="chips">${QUICK_IMM.map(x => effChip(x.label, 'ok', 'immc', ` <small>${x.n}</small>`)).join('')}</div>
+           <details class="panel all-eff"><summary>Todos los efectos (${effects.size})</summary><div class="body">
+             <div class="chips">${[...effects.values()].sort((a, b) => a.label.localeCompare(b.label, 'es'))
+               .map(x => effChip(x.label, '', 'any', ` <small>${x.champs.size}</small>`)).join('')}</div>
+           </div></details>`
         : '';
       return;
     }
-    const found = [...effects.values()]
-      .filter(x => norm(x.label).includes(q) && !S.filters.some(f => f.e === x.key))
-      .sort((a, b) => (norm(b.label).startsWith(q) - norm(a.label).startsWith(q)) || (b.champs.size - a.champs.size))
-      .slice(0, 6);
-    box.innerHTML = found.length ? `<div class="suggest">${found.map(x =>
-      `<button data-add="${esc(x.key)}">◆ Filtrar por <b>${esc(x.label)}</b><span class="k">${x.champs.size} campeones</span></button>`).join('')}</div>` : '';
+    const used = x => S.filters.some(f => f.e === x.key);
+    const direct = [...effects.values()]
+      .filter(x => norm(x.label).includes(q) && !used(x))
+      .sort((a, b) => (norm(b.label).startsWith(q) - norm(a.label).startsWith(q)) || (b.champs.size - a.champs.size));
+    // por sinónimo (p. ej. «alto voltaje» -> Descarga), detrás de las coincidencias directas
+    const bySyn = synonymMatches(q);
+    const syn = [...bySyn.keys()].filter(x => !used(x) && !direct.includes(x))
+      .sort((a, b) => (bySyn.get(b).score - bySyn.get(a).score) || (b.champs.size - a.champs.size));
+    const btn = (x, why) => `<button data-add="${esc(x.key)}">◆ Filtrar por <b>${esc(x.label)}</b>${why}<span class="k">${x.champs.size} campeones</span></button>`;
+    box.innerHTML = direct.length || syn.length ? `<div class="suggest">${direct.map(x => btn(x, '')).join('')}${syn.map(x =>
+      btn(x, ` <small class="syn-why">≈ «${esc(bySyn.get(x).s)}»</small>`)).join('')}</div>` : '';
   }
 
   function renderChips() {

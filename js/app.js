@@ -244,7 +244,7 @@
     store.get('mcoc-state', {}));
   S.q = '';
   let team = store.get('mcoc-team', []).filter(n => byName.has(n));
-  const saveState = () => store.set('mcoc-state', { filters: S.filters, cls: S.cls, rar: S.rar, sort: S.sort, relSeg: S.relSeg, bestUse: S.bestUse, bestCls: S.bestCls, best7: S.best7, rkCls: S.rkCls, rkBy: S.rkBy, rk7: S.rk7, teamSeg: S.teamSeg, recUse: S.recUse, recSize: S.recSize });
+  const saveState = () => store.set('mcoc-state', { filters: S.filters, cls: S.cls, rar: S.rar, sort: S.sort, relSeg: S.relSeg, bestUse: S.bestUse, bestCls: S.bestCls, best7: S.best7, rkCls: S.rkCls, rkBy: S.rkBy, rk7: S.rk7, teamSeg: S.teamSeg, recUse: S.recUse, recSize: S.recSize, top7: S.top7 });
   const saveTeam = () => store.set('mcoc-team', team);
 
   // ---------- piezas de interfaz ----------
@@ -489,6 +489,8 @@
     return out;
   }
 
+  // Inmunidades «clave»: las de los nodos más habituales (vista Equipo y recomendaciones)
+  const KEY_IMM_LIST = ['Veneno', 'Sangrado', 'Incinerar', 'Descarga', 'Aturdimiento', 'Anular', 'Rotura de armadura', 'Bloqueo de poder', 'Bloqueo de curación', 'Ola de frío', 'Congelación', 'Degeneración'];
   // Todas las inmunidades que aparecen en los datos (permanentes, condicionales o sin confirmar), de más a menos campeones
   const IMM_CATS = ['imm', 'immc', 'immu'];
   const QUICK_IMM = [...effects.values()]
@@ -744,7 +746,7 @@
     if (p && p !== c) { addSyn(c.name, p.name, synLabel(s)); addSyn(p.name, c.name, synLabel(s)); }
   })));
   // Inmunidades «clave» (las de los nodos más habituales) que tiene cada campeón (siempre o condicional)
-  const KEY_IMM = new Map(QUICK_IMM.map(e => [norm(e), e]));
+  const KEY_IMM = new Map(KEY_IMM_LIST.map(e => [norm(e), e]));
   champs.forEach(c => {
     c.keyImm = new Set([...c.immP, ...c.immC.map(x => x.e)].map(norm).filter(k => KEY_IMM.has(k)));
   });
@@ -882,8 +884,43 @@
     setTimeout(() => input.focus(), 50);
   }
 
-  const teamSeg = () => `<div class="seg">${[['team', 'Equipo'], ['roster', `Mi roster (${roster.length})`], ['rec', 'Recomendaciones']].map(([k, l]) =>
+  const teamSeg = () => `<div class="seg">${[['team', 'Equipo'], ['top', 'Top 30'], ['roster', `Roster (${roster.length})`], ['rec', 'Recomendar']].map(([k, l]) =>
     `<button data-tseg="${k}" class="${(S.teamSeg || 'team') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+
+  // ---------- Top 30 para misiones (sin prestigio) ----------
+  // Nota base = tier general de ataque (consenso de youtubers + Guide Blog, 0-100). En misiones lo que importa es
+  // atacar, así que no se mira la defensa ni el prestigio (rango/firma). Se suma un poco por cada inmunidad a los
+  // efectos de nodo más habituales, porque permite pasar más caminos sin preparar el combate.
+  const TIER_CENTER = { 'S+': 98, 'S': 91, 'A': 79, 'B': 66, 'C': 53, 'D': 38, 'E': 25, 'F': 20 };
+  function questScore(c) {
+    let base = c.genScore;
+    if (base == null) base = TIER_CENTER[c.gen] ?? TIER_CENTER[c.atk] ?? TIER_CENTER[c.yt] ?? null;
+    if (base == null) return null; // sin valorar por nadie
+    const perm = KEY_IMM_LIST.filter(e => c.immP.some(x => norm(x) === norm(e)));
+    const cond = KEY_IMM_LIST.filter(e => !perm.includes(e) && c.immC.some(x => norm(x.e) === norm(e)));
+    // bonus pequeño (máx. 3): ordena dentro del mismo nivel, pero no hace que un S adelante a un S+
+    const bonus = Math.min(3, perm.length * 0.75 + cond.length * 0.25);
+    return { c, base, bonus, total: base + bonus, perm, cond };
+  }
+  function viewTop() {
+    const only7 = !!S.top7;
+    const owned = new Set(roster);
+    const list = champs.filter(c => !only7 || c.rar === '7★').map(questScore).filter(Boolean)
+      .sort((a, b) => b.total - a.total || a.c.name.localeCompare(b.c.name)).slice(0, 30);
+    view.innerHTML = `${teamSeg()}
+      <div class="row"><label>Rareza</label>
+        <button class="toggle ${only7 ? '' : 'on'}" data-top7="0">Todas</button>
+        <button class="toggle ${only7 ? 'on' : ''}" data-top7="1">Solo 7★</button></div>
+      <p class="hint">Los 30 campeones más útiles para <b>misiones</b> (historia, eventos y Batallas), <b>sin tener en cuenta el prestigio</b>: se ordenan por su tier general de ataque (consenso de Vega, Lagacy, MetalSonicDude, Seatin y MCOC Guide Blog) y, a igualdad de nivel, van antes los que tienen más inmunidades a efectos de nodo habituales (${esc(KEY_IMM_LIST.slice(0, 5).join(', '))}…). Es orientativo.</p>
+      <ol class="list top30">${list.map((x, i) => {
+        const c = x.c;
+        const why = [`Tier general ${none(c.gen) ? '–' : c.gen}${c.genPos ? ` (puesto ${c.genPos} del ranking)` : ''}`];
+        if (x.perm.length) why.push('inmune a ' + x.perm.join(', '));
+        if (x.cond.length) why.push('inmune a veces a ' + x.cond.join(', '));
+        if (owned.has(c.name)) why.push('✓ en tu roster');
+        return champItem(c, `<div class="why"><b>#${i + 1}</b> · ${esc(why.join(' · '))}</div>`);
+      }).join('')}</ol>`;
+  }
 
   function viewRoster() {
     const members = sortChamps(roster.map(n => byName.get(n)).filter(Boolean), 'yt');
@@ -932,6 +969,7 @@
     setTitle('Equipo', false);
     if (S.teamSeg === 'roster') return viewRoster();
     if (S.teamSeg === 'rec') return viewRec();
+    if (S.teamSeg === 'top') return viewTop();
     const members = team.map(n => byName.get(n)).filter(Boolean);
     const slots = [];
     for (let i = 0; i < 5; i++) {
@@ -949,7 +987,7 @@
       const addImm = (e, c, kind) => { const k = norm(e); if (!imm.has(k)) imm.set(k, { e, who: [] }); imm.get(k).who.push({ c, kind }); };
       members.forEach(c => { c.immP.forEach(e => addImm(e, c, '')); c.immC.forEach(x => addImm(x.e, c, 'cond.')); c.immU.forEach(e => addImm(e, c, '¿?')); });
       const immRows = [...imm.values()].sort((a, b) => b.who.length - a.who.length || a.e.localeCompare(b.e));
-      const gaps = QUICK_IMM.filter(e => !imm.has(norm(e)));
+      const gaps = KEY_IMM_LIST.filter(e => !imm.has(norm(e)));
       // efectos provocados
       const prov = new Map();
       members.forEach(c => c.prov.forEach(e => { const k = norm(e); if (!prov.has(k)) prov.set(k, { e, n: 0 }); prov.get(k).n++; }));
@@ -1010,6 +1048,8 @@
       document.body.appendChild(bg);
       return;
     }
+    const t7 = e.target.closest('[data-top7]');
+    if (t7) { S.top7 = t7.dataset.top7 === '1'; saveState(); viewTeam(); return; }
     const ru = e.target.closest('[data-recuse]');
     if (ru) { S.recUse = ru.dataset.recuse; saveState(); viewTeam(); return; }
     const rs = e.target.closest('[data-recsize]');

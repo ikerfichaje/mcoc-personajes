@@ -1,6 +1,6 @@
 /* Service worker: guarda la app, los datos y los retratos para usarla sin conexión.
    Sube VERSION cada vez que cambies datos o código para que los móviles se actualicen. */
-const VERSION = 'mcoc-v23';
+const VERSION = 'mcoc-v25';
 const CORE = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'data/data.js', 'data/images.js', 'data/kit-effects.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.svg'
@@ -20,7 +20,8 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k !== VERSION) await caches.delete(k);
+    // solo las cachés propias (la v2, en /v2/, usa «mcoc2-…»)
+    for (const k of await caches.keys()) if (k.startsWith('mcoc-v') && k !== VERSION) await caches.delete(k);
     await self.clients.claim();
   })());
 });

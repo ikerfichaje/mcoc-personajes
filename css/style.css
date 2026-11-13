@@ -99,6 +99,16 @@ main { max-width: 760px; margin: 0 auto; padding: 12px 16px 24px; outline: none;
 
 .hint { color: var(--muted); font-size: 13px; margin: 8px 2px; }
 
+/* buscador en frases: «Entendido: …» */
+.parsed { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 2px; font-size: 13px; }
+.parsed:empty { display: none; }
+.parsed .lbl { color: var(--muted); }
+.pchip { --cc: var(--muted); display: inline-flex; gap: 4px; align-items: baseline; padding: 3px 10px; border-radius: 999px; font-size: 13px;
+  background: color-mix(in srgb, var(--cc) 16%, var(--bg2)); border: 1px solid color-mix(in srgb, var(--cc) 45%, transparent); }
+.pchip small { color: var(--muted); font-size: 11px; }
+.pchip.m-imm, .pchip.m-res { --cc: var(--ok); } .pchip.m-prov { --cc: var(--bad); } .pchip.m-gain { --cc: var(--info); }
+.pchip.unk { --cc: var(--warn); font-style: italic; }
+
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 .fchip {
   display: inline-flex; align-items: center; gap: 4px;

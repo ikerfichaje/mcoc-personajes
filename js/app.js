@@ -295,10 +295,8 @@
       const cats = MODE_CATS[f.mode];
       if (cats && !cats.some(x => t.has(x))) return false;
     }
-    if (S.q) {
-      const q = norm(S.q);
-      if (!norm(c.name).includes(q)) return false;
-    }
+    // lo escrito se interpreta como frase: «inmune a veneno provoca anular cósmico 7★»
+    if (S.q.trim() && !nlMatch(c, nlParse(S.q))) return false;
     return true;
   }
   function sortChamps(arr, by) {
@@ -310,13 +308,20 @@
     });
   }
   function whyLine(c) {
-    if (!S.filters.length) return '';
-    return `<div class="why">${S.filters.map(f => {
+    const parts = S.filters.map(f => {
       const cats = [...(c.tags.get(f.e) || [])];
       const wanted = MODE_CATS[f.mode];
       const shown = (wanted ? cats.filter(x => wanted.includes(x)) : cats).map(x => CAT[x]);
       return `<b>${esc(effectLabel(f.e))}:</b> ${esc(shown.join(', '))}`;
-    }).join(' · ')}</div>`;
+    });
+    // efectos entendidos en la frase escrita
+    if (S.q.trim()) for (const t of nlParse(S.q).terms) {
+      if (t.type !== 'eff' || S.filters.some(f => f.e === t.key)) continue;
+      const cats = [...(c.tags.get(t.key) || [])];
+      const want = NL_CATS[t.mode];
+      parts.push(`<b>${esc(t.label)}:</b> ${esc((want ? cats.filter(x => want.includes(x)) : cats).map(x => CAT[x]).join(', '))}`);
+    }
+    return parts.length ? `<div class="why">${parts.join(' · ')}</div>` : '';
   }
 
   // Sinónimos para el buscador: palabras coloquiales en español y nombre en inglés del juego -> efecto real.
@@ -489,6 +494,99 @@
     return out;
   }
 
+  // ---------- buscador en frases (el de la v2) ----------
+  // «inmune a veneno y sangrado provoca anular cósmico 7★» -> filtros. Clases y rareza en cualquier sitio;
+  // «inmune a / provoca / obtiene / resiste / pasivo / battlecast» cambian el modo de lo que viene detrás;
+  // los efectos se separan con comas, «y» o «+»; cada trozo se resuelve como efecto (nombre, sinónimo o
+  // parcial) o como nombre de campeón.
+  const NL_CLASS = [
+    ['Cósmico', /^(cosmicos?|cosmic)$/], ['Tecnología', /^(tecnologia|tecnologicos?|tech)$/], ['Mutante', /^(mutantes?|mutant)$/],
+    ['Habilidad', /^(habilidad|skill)$/], ['Ciencia', /^(ciencia|cientificos?|science)$/], ['Místico', /^(misticos?|mystic)$/]
+  ];
+  const NL_MODES = [
+    ['imm', /\b(?:inmunes?|inmunidad(?:es)?|immune|immunity)(?:\s+(?:a|al|contra|to))?(?=\s|$)/g],
+    ['prov', /\b(?:provoca(?:n|r)?|que provoquen?|inflige(?:n)?|aplica(?:n)?|causa(?:n)?|inflicts?)(?=\s|$)/g],
+    ['gain', /\b(?:obtiene(?:n)?|gana(?:n)?|consigue(?:n)?|gains?)(?=\s|$)/g],
+    ['res', /\b(?:resiste(?:n)?|resistencia a)(?=\s|$)/g],
+    ['pas', /\b(?:pasivos?|pasivas?)(?=\s|$)/g],
+    ['bc', /\b(?:battlecast|reliquia)(?=\s|$)/g]
+  ];
+  const NL_LABEL = { any: '', imm: 'Inmune a', prov: 'Provoca', gain: 'Obtiene', res: 'Resiste', pas: 'Pasivo' };
+  // «provoca» incluye «otras mecánicas»: acciones sobre el rival como Anular, que no son perjuicios
+  const NL_CATS = { imm: ['imm', 'immc', 'immu'], prov: ['prov', 'other'], gain: ['gain'], res: ['res'], pas: ['pas'] };
+  const NL_STOP = /^(?:que|los|las|el|la|un|una|a|al|de|campeones?|personajes?|sean?|es|son|con|y|e|o|todos?)$/;
+  const nlTrim = s => { const w = s.split(/\s+/).filter(Boolean); while (w.length && NL_STOP.test(w[0])) w.shift(); while (w.length && NL_STOP.test(w[w.length - 1])) w.pop(); return w.join(' '); };
+  const nlIsName = p => champs.some(c => norm(c.name).includes(p));
+  function nlBest(pred) { let b = null; for (const x of effects.values()) if (pred(x) && (!b || x.champs.size > b.champs.size)) b = x; return b; }
+  function nlEffect(p, allowName) {
+    const exact = effects.get(p);
+    if (exact) return { eff: exact };
+    const syn = synIndex.find(s => s.syns.includes(p));
+    if (syn) return { eff: syn.x, via: p };
+    if (allowName && nlIsName(p)) return null;          // es un nombre de campeón
+    const pre = nlBest(x => norm(x.label).startsWith(p));
+    if (pre) return { eff: pre };
+    if (p.length >= 4) {
+      const sp = synIndex.filter(s => s.syns.some(w => w.includes(p))).sort((a, b) => b.x.champs.size - a.x.champs.size)[0];
+      if (sp) return { eff: sp.x, via: sp.syns.find(w => w.includes(p)) };
+      const part = nlBest(x => norm(x.label).includes(p));
+      if (part) return { eff: part };
+    }
+    return null;
+  }
+  let nlCache = { q: null, p: null };
+  function nlParse(q) {
+    if (nlCache.q === q) return nlCache.p;
+    const out = { cls: new Set(), rar: '', tier: '', terms: [] };
+    let s = ' ' + norm(q).replace(/[«»"]/g, ' ') + ' ';
+    s = s.replace(/\s([67])\s*(?:★|\*|estrellas?)(?=\s)/g, (_, n) => { out.rar = n + '★'; return ' '; });
+    s = s.replace(/\stier\s+(s\+|s|a|b|c|d)(?=\s)/g, (_, t) => { out.tier = t.toUpperCase(); return ' '; });
+    s = s.replace(/\s(s\+)(?=\s)/g, () => { out.tier = 'S+'; return ' '; });
+    s = ' ' + s.split(/\s+/).filter(w => { const m = NL_CLASS.find(([, r]) => r.test(w)); if (m) out.cls.add(m[0]); return !m; }).join(' ') + ' ';
+    const marks = [];
+    for (const [mode, re] of NL_MODES) { re.lastIndex = 0; let m; while ((m = re.exec(s))) marks.push({ i: m.index, end: m.index + m[0].length, mode }); }
+    marks.sort((a, b) => a.i - b.i);
+    const segs = []; let pos = 0, mode = 'any';
+    for (const m of marks) { if (m.i < pos) continue; segs.push({ mode, text: s.slice(pos, m.i) }); mode = m.mode; pos = m.end; }
+    segs.push({ mode, text: s.slice(pos) });
+    for (const seg of segs) for (let piece of seg.text.split(/\s*(?:,|\+|;|\sy\s|\se\s)\s*/)) {
+      piece = nlTrim(piece.trim());
+      if (!piece) continue;
+      if (seg.mode === 'bc') {
+        const b = battlecasts.find(b => norm(b.key).startsWith(piece)) || battlecasts.find(b => norm(b.key).includes(piece));
+        out.terms.push(b ? { type: 'bc', name: b.key } : { type: 'unk', text: piece });
+        continue;
+      }
+      const r = nlEffect(piece, seg.mode === 'any');
+      if (r) out.terms.push({ type: 'eff', key: r.eff.key, label: r.eff.label, mode: seg.mode, via: r.via && r.via !== norm(r.eff.label) ? r.via : '' });
+      else if (nlIsName(piece)) out.terms.push({ type: 'name', text: piece });
+      else out.terms.push({ type: 'unk', text: piece });
+    }
+    nlCache = { q, p: out };
+    return out;
+  }
+  function nlMatch(c, p) {
+    if (p.cls.size && !p.cls.has(c.cls)) return false;
+    if (p.rar && c.rar !== p.rar) return false;
+    if (p.tier && (c.gen || c.yt) !== p.tier) return false;
+    for (const t of p.terms) {
+      if (t.type === 'name' && !norm(c.name).includes(t.text)) return false;
+      if (t.type === 'bc' && !(c.bc && norm(bcBase(c.bc)) === norm(t.name))) return false;
+      if (t.type === 'eff') {
+        const cats = c.tags.get(t.key);
+        if (!cats) return false;
+        const want = NL_CATS[t.mode];
+        if (want && !want.some(x => cats.has(x))) return false;
+      }
+    }
+    return true;
+  }
+  // el trozo que se está escribiendo = lo que hay tras el último separador o palabra de modo
+  function nlFragment(q) {
+    const parts = (' ' + norm(q)).split(/,|\+|;|\sy\s|\se\s|\s(?:a|al|contra|provoca\w*|inflige\w*|aplica\w*|obtiene\w*|gana\w*|resiste\w*|inmunes?|inmunidad\w*|pasiv\w*|battlecast|reliquia)(?=\s|$)/);
+    return nlTrim(parts[parts.length - 1].trim());
+  }
+
   // Inmunidades «clave»: las de los nodos más habituales (vista Equipo y recomendaciones)
   const KEY_IMM_LIST = ['Veneno', 'Sangrado', 'Incinerar', 'Descarga', 'Aturdimiento', 'Anular', 'Rotura de armadura', 'Bloqueo de poder', 'Bloqueo de curación', 'Ola de frío', 'Congelación', 'Degeneración'];
   // Todas las inmunidades que aparecen en los datos (permanentes, condicionales o sin confirmar), de más a menos campeones
@@ -504,10 +602,11 @@
     const nFilt = S.cls.length + (S.rar ? 1 : 0);
     view.innerHTML = `
       <div class="search">
-        <input id="q" type="search" autocomplete="off" placeholder="Nombre o efecto (p. ej. Veneno, fuego, curar…)" value="${esc(S.q)}" aria-label="Buscar">
+        <input id="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="Escribe: «inmune a veneno provoca anular»" value="${esc(S.q)}" aria-label="Buscar">
         <button class="clear" id="qclear" aria-label="Borrar" ${S.q ? '' : 'hidden'}>×</button>
       </div>
       <div id="suggest"></div>
+      <div id="parsed" class="parsed"></div>
       <div id="fchips"></div>
       <details class="panel" id="fpanel" ${nFilt ? 'open' : ''}>
         <summary>Filtros y orden ${nFilt ? `<span class="badge-n">${nFilt}</span>` : ''}</summary>
@@ -525,7 +624,7 @@
     const q = view.querySelector('#q');
     q.addEventListener('input', () => { S.q = q.value; view.querySelector('#qclear').hidden = !S.q; renderSuggest(); renderResults(); });
     q.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { const b = view.querySelector('#suggest [data-add]'); if (b) { b.click(); e.preventDefault(); } q.blur(); }
+      if (e.key === 'Enter') { const b = view.querySelector('#suggest [data-sug]'); if (b) { b.click(); e.preventDefault(); } else q.blur(); }
     });
     view.querySelector('#qclear').addEventListener('click', () => { S.q = ''; q.value = ''; view.querySelector('#qclear').hidden = true; renderSuggest(); renderResults(); q.focus(); });
     view.querySelector('#sort').addEventListener('change', e => { S.sort = e.target.value; saveState(); renderResults(); });
@@ -553,12 +652,35 @@
     saveState();
   }
 
+  // «Entendido: …» debajo del buscador
+  function renderParsed() {
+    const box = view.querySelector('#parsed');
+    if (!box) return;
+    if (!S.q.trim()) { box.innerHTML = ''; return; }
+    const p = nlParse(S.q), bits = [];
+    p.cls.forEach(k => bits.push(`<span class="pchip" style="${ccVar(k)}">${esc(k)}</span>`));
+    if (p.rar) bits.push(`<span class="pchip">${esc(p.rar)}</span>`);
+    if (p.tier) bits.push(`<span class="pchip">Tier ${esc(p.tier)}</span>`);
+    for (const t of p.terms) {
+      if (t.type === 'eff') bits.push(`<span class="pchip m-${t.mode}">${NL_LABEL[t.mode] ? `<small>${NL_LABEL[t.mode]}</small> ` : ''}${esc(t.label)}${t.via ? ` <small>≈ ${esc(t.via)}</small>` : ''}</span>`);
+      else if (t.type === 'bc') bits.push(`<span class="pchip"><small>Battlecast</small> ${esc(t.name)}</span>`);
+      else if (t.type === 'name') bits.push(`<span class="pchip"><small>Nombre</small> ${esc(t.text)}</span>`);
+      else bits.push(`<span class="pchip unk" title="No lo entiendo: no filtra">¿${esc(t.text)}?</span>`);
+    }
+    box.innerHTML = bits.length ? `<span class="lbl">Entendido:</span> ${bits.join('')}` : '';
+  }
+
+  const NL_EXAMPLES = ['inmune a veneno y sangrado', 'provoca anular cósmico', 'alto voltaje 7★', 'battlecast thor', 'tier s+ místico'];
   function renderSuggest() {
     const box = view.querySelector('#suggest');
-    const q = norm(S.q);
-    if (q.length < 2) {
+    renderParsed();
+    const frag = nlFragment(S.q);
+    const q = frag;
+    if (q.length < 2 || effects.has(q)) {
       box.innerHTML = (!S.filters.length && !S.q)
-        ? `<p class="hint">Escribe un efecto para buscar campeones que lo tengan, o prueba un atajo: <b>inmune a…</b></p>
+        ? `<p class="hint">Escribe como hablarías: un efecto (o un sinónimo como «fuego» o «curar»), «inmune a…», «provoca…», «obtiene…», una clase, «7★», «tier S+», «battlecast Thor» o un nombre. Por ejemplo:</p>
+           <div class="chips">${NL_EXAMPLES.map(e => `<button class="chip" data-ex="${esc(e)}">${esc(e)}</button>`).join('')}</div>
+           <p class="hint">O prueba un atajo: <b>inmune a…</b></p>
            <div class="chips">${QUICK_IMM.map(x => effChip(x.label, 'ok', 'immc', ` <small>${x.n}</small>`)).join('')}</div>
            <details class="panel all-eff"><summary>Todos los efectos (${effects.size})</summary><div class="body">
              <div class="chips">${[...effects.values()].sort((a, b) => a.label.localeCompare(b.label, 'es'))
@@ -575,7 +697,8 @@
     const bySyn = synonymMatches(q);
     const syn = [...bySyn.keys()].filter(x => !used(x) && !direct.includes(x))
       .sort((a, b) => (bySyn.get(b).score - bySyn.get(a).score) || (b.champs.size - a.champs.size));
-    const btn = (x, why) => `<button data-add="${esc(x.key)}">◆ Filtrar por <b>${esc(x.label)}</b>${why}<span class="k">${x.champs.size} campeones</span></button>`;
+    // al elegir una sugerencia se completa la palabra en la frase (no se pierde «inmune a», «provoca»…)
+    const btn = (x, why) => `<button data-sug="${esc(x.label)}" data-frag="${esc(frag)}">◆ <b>${esc(x.label)}</b>${why}<span class="k">${x.champs.size} campeones</span></button>`;
     box.innerHTML = direct.length || syn.length ? `<div class="suggest">${direct.map(x => btn(x, '')).join('')}${syn.map(x =>
       btn(x, ` <small class="syn-why">≈ «${esc(bySyn.get(x).s)}»</small>`)).join('')}</div>` : '';
   }
@@ -599,6 +722,20 @@
   }
 
   view.addEventListener('click', e => {
+    // buscador en frases: completar la palabra que se escribía, o poner un ejemplo
+    const sug = e.target.closest('[data-sug]'), ex = e.target.closest('[data-ex]');
+    if (sug || ex) {
+      const q = view.querySelector('#q');
+      if (!q) return;
+      if (ex) q.value = ex.dataset.ex;
+      else {
+        const n = norm(q.value), i = n.lastIndexOf(sug.dataset.frag);
+        q.value = (sug.dataset.frag && i >= 0 ? q.value.slice(0, i) : q.value.replace(/\s*$/, ' ')) + sug.dataset.sug + ' ';
+        q.focus();
+      }
+      S.q = q.value; refreshSearch();
+      return;
+    }
     const add = e.target.closest('[data-add]');
     if (add) { addFilter(add.dataset.add); S.q = ''; const q = view.querySelector('#q'); if (q) q.value = ''; refreshSearch(); return; }
     const rm = e.target.closest('[data-rm]');
@@ -619,6 +756,7 @@
   function refreshSearch() {
     if (!view.querySelector('#results')) return;
     const qc = view.querySelector('#qclear'); if (qc) qc.hidden = !S.q;
+    renderParsed();
     renderSuggest(); renderChips(); renderResults();
   }
 

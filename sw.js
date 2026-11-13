@@ -1,6 +1,6 @@
 /* Service worker: guarda la app, los datos y los retratos para usarla sin conexión.
    Sube VERSION cada vez que cambies datos o código para que los móviles se actualicen. */
-const VERSION = 'mcoc-v16';
+const VERSION = 'mcoc-v17';
 const CORE = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'data/data.js', 'data/images.js', 'data/kit-effects.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.svg'
@@ -38,7 +38,8 @@ self.addEventListener('fetch', event => {
     }
     // Código y datos: primero la red (así llegan las actualizaciones); sin conexión, la caché
     try {
-      const res = await fetch(req);
+      // cache: 'no-cache' evita que la caché HTTP del navegador (10 min en GitHub Pages) sirva una versión vieja
+      const res = await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
       if (res.ok) cache.put(req, res.clone());
       return res;
     } catch (e) {

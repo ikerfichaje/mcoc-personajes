@@ -499,6 +499,9 @@
     });
   }
 
+  function isStandaloneNow() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
   function alertSheet(msg) {
     const bg = document.createElement('div');
     bg.className = 'sheet-bg';
@@ -976,6 +979,10 @@
         <p>${champs.length} campeones (${n7} con 7★ y ${champs.length - n7} solo con 6★), ${battlecasts.length} Battlecasts y ${scFamilies.length} familias de Statcast. Datos de ${esc(RAW.generated)} a partir de <i>${esc(RAW.source)}</i>.</p>
         <p>Funciona sin conexión: todos los datos e imágenes van dentro de la app.</p>
       </section>
+      ${isStandaloneNow() ? '' : `<section class="card"><h3>Instalar en el móvil</h3>
+        <p>Añade la app a la pantalla de inicio para abrirla como una app más y usarla sin conexión.</p>
+        <button class="install-btn" style="font-size:16px;padding:12px 20px;width:100%" onclick="document.getElementById('installBtn').click()">⤓ Instalar en la pantalla de inicio</button>
+      </section>`}
       <details class="panel"><summary>Cómo instalarla en el móvil</summary><div class="body">
         <p><b>Android (Chrome):</b> abre la web y pulsa ⋮ → «Instalar aplicación» o «Añadir a pantalla de inicio».</p>
         <p><b>iPhone (Safari):</b> pulsa Compartir → «Añadir a pantalla de inicio».</p>
@@ -1049,6 +1056,6 @@
 
   // ---------- modo offline (PWA) ----------
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* sin SW: la app sigue funcionando */ });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { /* sin SW: la app sigue funcionando */ });
   }
 })();

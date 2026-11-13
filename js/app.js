@@ -1070,10 +1070,68 @@
         ${roster.length ? '<button class="btn sec" data-clearroster>Vaciar</button>' : ''}</div>`;
   }
 
+  // ---------- Mi top 30 para Batallas: mejores atacantes, defensores y cambios ----------
+  // Ataque = nota de questScore (tier general de ataque + inmunidades de nodo). Defensa = tier de defensa
+  // (general, o el de MCOC Guide Blog), con los youtubers solo para desempatar. Valor del campeón = el mejor de los dos.
+  function battleVal(c) {
+    const q = questScore(c);
+    const atk = q ? q.total : null;
+    let def = TIER_CENTER[c.genDef] ?? TIER_CENTER[c.def] ?? null;
+    if (def != null) def += (TV[c.yt] || 0) * 0.1;
+    const v = Math.max(atk ?? 0, def ?? 0);
+    return { c, atk, def, v: atk == null && def == null ? null : v, role: (def ?? -1) > (atk ?? -1) ? 'def' : 'atk' };
+  }
+  function battleBlock(pool) {
+    if (!pool.length) return `<section class="card"><h3>Tu top 30 para Batallas</h3><p class="hint">Añade tus mejores campeones en «Roster» para ver tus mejores atacantes y defensores y qué campeones los mejorarían.</p>
+      <div class="btns"><button class="btn" data-tseg="roster">Ir a Mi roster</button></div></section>`;
+    const vals = pool.map(battleVal);
+    const tierTxt = (c, use) => { const t = use === 'def' ? (c.genDef || c.def) : c.gen; return none(t) ? '–' : t; };
+    const N = Math.min(10, pool.length);
+    const atk = vals.filter(x => x.atk != null).sort((a, b) => b.atk - a.atk).slice(0, N);
+    const def = vals.filter(x => x.def != null).sort((a, b) => b.def - a.def).slice(0, N);
+    const row = (x, i, use) => champItem(x.c, `<div class="why"><b>#${i + 1}</b> · ${use === 'def' ? 'Defensa' : 'Ataque'} ${esc(tierTxt(x.c, use))}${use === 'atk' && x.c.keyImm.size ? ` · inmune a ${esc([...x.c.keyImm].map(k => KEY_IMM.get(k)).join(', '))}` : ''}</div>`);
+    // Cambios: los mejores de fuera del roster contra los más flojos de dentro (por su mejor uso)
+    const inR = new Set(pool.map(c => c.name));
+    const outside = champs.filter(c => !inR.has(c.name)).map(battleVal);
+    const byAtk = outside.filter(x => x.atk != null).sort((a, b) => b.atk - a.atk);
+    const byDef = outside.filter(x => x.def != null).sort((a, b) => b.def - a.def);
+    const weak = vals.slice().sort((a, b) => (a.v ?? 0) - (b.v ?? 0));
+    const full = pool.length >= ROSTER_MAX;
+    const slots = full ? 10 : Math.min(10, ROSTER_MAX - pool.length);
+    // alternando: el mejor atacante de fuera, el mejor defensor de fuera… cada uno contra el más flojo que quede
+    const swaps = [], used = new Set();
+    let ia = 0, id = 0, iw = 0, turn = 'atk', stopA = false, stopD = false;
+    while (swaps.length < slots && !(stopA && stopD)) {
+      const use = turn === 'atk' && !stopA ? 'atk' : !stopD ? 'def' : 'atk';
+      turn = turn === 'atk' ? 'def' : 'atk';
+      const list = use === 'atk' ? byAtk : byDef;
+      let i = use === 'atk' ? ia : id;
+      while (i < list.length && used.has(list[i].c.name)) i++;
+      const o = list[i], w = full ? weak[iw] : null;
+      const score = o && (use === 'atk' ? o.atk : o.def);
+      if (!o || (w && score - (w.v ?? 0) < 3)) { if (use === 'atk') stopA = true; else stopD = true; continue; }
+      if (use === 'atk') ia = i + 1; else id = i + 1;
+      used.add(o.c.name); if (w) iw++;
+      swaps.push({ o: Object.assign({}, o, { role: use }), w });
+    }
+    const roleTxt = x => x.role === 'def' ? `defensa ${tierTxt(x.c, 'def')}` : `ataque ${tierTxt(x.c, 'atk')}`;
+    return `<section class="card"><h3>Tu top 30 para Batallas</h3>
+        <p class="hint">Con los ${pool.length} campeones de tu roster. Ataque = tier general de ataque + inmunidades a nodos habituales; defensa = tier de defensa (MCOC Guide Blog). No conoce el rango ni la firma de tus campeones.</p>
+        <details class="kit" open><summary><b>Mejores atacantes</b></summary><ol class="list top30">${atk.map((x, i) => row(x, i, 'atk')).join('') || '<p class="empty">—</p>'}</ol></details>
+        <details class="kit" open><summary><b>Mejores defensores</b></summary><ol class="list top30">${def.map((x, i) => row(x, i, 'def')).join('') || '<p class="empty">Ninguno de tu roster tiene tier de defensa.</p>'}</ol></details>
+        <details class="kit" open><summary><b>${pool.length >= ROSTER_MAX ? 'Cambios que mejorarían tu top 30' : `Con qué completar tu top 30 (te faltan ${ROSTER_MAX - pool.length})`}</b></summary>
+          ${swaps.length ? `<ul class="list">${swaps.map(s => `<li><a class="citem" href="${champHref(s.o.c)}">${avatar(s.o.c, 'sm')}<span class="meta">
+            <div class="nm">${esc(s.o.c.name)}${s.w ? ` <small class="empty">por ${esc(s.w.c.name)}</small>` : ''}</div>
+            <div class="why">Entra: ${esc(roleTxt(s.o))}${s.w ? ` · sale: ${esc(s.w.c.name)} (${esc(s.w.v == null ? 'sin valorar' : roleTxt(s.w))})` : ''}</div></span></a></li>`).join('')}</ul>`
+            : '<p class="empty">Tu top 30 ya tiene a los mejores: ningún campeón de fuera supera claramente a los tuyos.</p>'}
+        </details></section>`;
+  }
+
   function viewRec() {
     const use = S.recUse || 'atk', size = S.recSize || 5;
     const pool = roster.map(n => byName.get(n)).filter(Boolean);
-    const ctrl = `${teamSeg()}
+    const ctrl = `${teamSeg()}${battleBlock(pool)}
+      <h3 class="sec-title">Mejores equipos con tu roster</h3>
       <div class="row"><label>Uso</label>
         <button class="toggle ${use === 'atk' ? 'on' : ''}" data-recuse="atk">Atacar</button>
         <button class="toggle ${use === 'def' ? 'on' : ''}" data-recuse="def">Defender</button></div>

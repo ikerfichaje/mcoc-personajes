@@ -1,6 +1,6 @@
-/* Service worker: guarda la app, los datos y los retratos para usarla sin conexión.
+﻿/* Service worker: guarda la app, los datos y los retratos para usarla sin conexión.
    Sube VERSION cada vez que cambies datos o código para que los móviles se actualicen. */
-const VERSION = 'mcoc-v25';
+const VERSION = 'mcoc-v26';
 const CORE = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'data/data.js', 'data/images.js', 'data/kit-effects.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.svg'

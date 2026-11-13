@@ -247,6 +247,8 @@ details.kit:first-of-type { border-top: 0; }
 details.kit summary { cursor: pointer; padding: 8px 0; font-size: 14px; display: flex; gap: 6px; align-items: center; }
 details.kit summary .pas { font-size: 10px; background: var(--ok); color: #111; border-radius: 4px; padding: 1px 5px; }
 details.kit .chips { padding-bottom: 10px; }
+details.kit > .list { margin-bottom: 10px; }
+.sec-title { margin: 18px 0 6px; font-size: 16px; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

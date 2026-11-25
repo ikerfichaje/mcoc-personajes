@@ -76,6 +76,7 @@
   // ---------- modelo de datos ----------
   const champs = [];
   const byName = new Map();
+  const ytBandMin = {}; // nota mínima de cada letra en mcoc.app (mcoc.app cambia sus franjas: se deducen de los datos)
   {
     const links = RAW.sheets['Campeones'].links || {};
     for (const r of rowsOf('Campeones')) {
@@ -120,9 +121,10 @@
         const c = byName.get(r['Campeón']);
         if (!c) continue;
         const num = v => (none(v) || isNaN(+v) ? null : +v);
+        const yt = /^(S\+|S|A|B|C|D|F) \((\d+)\)$/.exec(r['Media youtubers (mcoc.app)']);
+        if (yt) ytBandMin[yt[1]] = Math.min(ytBandMin[yt[1]] ?? 101, +yt[2]);
         c.gen = none(r['Tier general']) ? '' : r['Tier general'];
         c.genScore = num(r['Nota general (0-100)']);
-        c.genPos = num(r['Puesto']);
         c.nOps = num(r['Nº opiniones']) || 0;
         c.agree = none(r['Acuerdo']) ? '' : r['Acuerdo'];
         c.genDef = none(r['Tier general defensa']) ? '' : r['Tier general defensa'];
@@ -258,7 +260,7 @@
   const tiersMini = c => `<span class="tiers" title="Tier general (consenso)">${tierHtml(c.gen || c.yt)}</span>`;
   const AGREE_TXT = { Alto: 'las fuentes coinciden', Medio: 'algo de discrepancia', Bajo: 'opiniones muy distintas' };
   // nota 0-100 -> letra, con las franjas de mcoc.app (las mismas que usa la hoja «Tier list general»)
-  const scoreTier = v => v == null ? '' : v >= 96 ? 'S+' : v >= 86 ? 'S' : v >= 72 ? 'A' : v >= 60 ? 'B' : v >= 46 ? 'C' : v >= 30 ? 'D' : 'F';
+  const scoreTier = v => v == null ? '' : ['S+', 'S', 'A', 'B', 'C', 'D'].find(t => t in ytBandMin && v >= ytBandMin[t]) || 'F';
   function opinionsHtml(c) {
     const rows = [
       ['Vega', 'YouTube (vía mcoc.app)', c.ops.Vega], ['Lagacy', 'YouTube (vía mcoc.app)', c.ops.Lagacy],
@@ -299,14 +301,18 @@
     if (S.q.trim() && !nlMatch(c, nlParse(S.q))) return false;
     return true;
   }
+  // mismo orden que la hoja «Tier list general»: a igual nota, primero el de más acuerdo entre fuentes
+  const AGREE_RANK = { Alto: 0, Medio: 1, Bajo: 2 };
   function sortChamps(arr, by) {
-    const k = by === 'gen' ? c => [rank(c.gen) * 1000 + (c.genScore == null ? 999 : -c.genScore), -c.nOps]
+    const k = by === 'gen' ? c => [rank(c.gen) * 1000 + (c.genScore == null ? 999 : -c.genScore), c.agree in AGREE_RANK ? AGREE_RANK[c.agree] : 3, -c.nOps]
       : by === 'atk' ? c => [rank(c.atk), rank(c.yt)] : by === 'def' ? c => [rank(c.def), rank(c.yt)] : by === 'name' ? null : c => [rank(c.yt), rank(c.atk)];
     return arr.sort((a, b) => {
-      if (k) { const x = k(a), y = k(b); if (x[0] !== y[0]) return x[0] - y[0]; if (x[1] !== y[1]) return x[1] - y[1]; }
+      if (k) { const x = k(a), y = k(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; }
       return a.name.localeCompare(b.name);
     });
   }
+  // El puesto se calcula con el mismo orden que la pestaña Ranking, para que la ficha y el ranking coincidan
+  sortChamps(champs.filter(c => c.genScore != null), 'gen').forEach((c, i) => { c.genPos = i + 1; });
   function whyLine(c) {
     const parts = S.filters.map(f => {
       const cats = [...(c.tags.get(f.e) || [])];

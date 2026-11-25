@@ -20,7 +20,7 @@ sw.js, manifest.webmanifest, icons/   modo offline / instalable
 scripts/
   excel-to-json.ps1    Excel → data/data.js (+ data.json)
   download-images.ps1  descarga los retratos de MCOCHUB
-  serve.ps1            servidor local para probar
+  update-tiers.ps1     tiers y tier list general  serve.ps1            servidor local para probar
 MCOC_campeones_nov2026.xlsx        fuente de los datos
 ```
 
@@ -47,8 +47,7 @@ Se publica con **GitHub Pages desde la raíz de `main`** (*Settings → Pages �
    `powershell -ExecutionPolicy Bypass -File scripts\kit-effects.ps1 -Abilities <ruta>\data\champions\abilities.json`.
    Genera `data/kit-effects.js` (solo nombres de efectos, nunca el texto de los kits). Usa `scripts/glosario.json` para traducir.
 3c. Tiers y tier list general (cada mes, con el Excel cerrado): `powershell -ExecutionPolicy Bypass -File scripts\update-tiers.ps1`
-   (añade `-DryRun` para ver los cambios sin tocar el Excel) y vuelve a ejecutar `excel-to-json.ps1`.
-4. Sube `VERSION` en `sw.js` (p. ej. `mcoc-v2`) para que los móviles descarguen la nueva versión.
+   (añade `-DryRun` para ver los cambios sin tocar el Excel) y vuelve a ejecutar `excel-to-json.ps1`.4. Sube `VERSION` en `sw.js` (p. ej. `mcoc-v2`) para que los móviles descarguen la nueva versión.
 
 ## Fuentes y aviso legal
 
@@ -56,7 +55,6 @@ Se publica con **GitHub Pages desde la raíz de `main`** (*Settings → Pages �
 
 - Kits, inmunidades y retratos: [MCOCHUB](https://mcochub.insaneskull.com) (la app enlaza a la ficha completa de cada campeón en lugar de copiar los textos).
 - Tiers: [mcoc.app](https://mcoc.app) (Vega, Lagacy, MetalSonicDude, Seatin) y [MCOC Guide Blog](https://www.mcocguideblog.com) (CaptainRaghu). Son opiniones de sus autores.
-- Reliquias recomendadas: [MCOC Scout](https://mcocscout.com/relics).
-- La clasificación de efectos se ha hecho automáticamente a partir del texto en inglés de los kits y puede tener errores.
+- Reliquias recomendadas: [MCOC Scout](https://mcocscout.com/relics).- La clasificación de efectos se ha hecho automáticamente a partir del texto en inglés de los kits y puede tener errores.
 
 Los retratos (`app/img/`) son propiedad de Kabam / Marvel y se obtuvieron de MCOCHUB; se incluyen sin ánimo de lucro. Si los titulares lo piden, se retirarán (la app muestra las iniciales del campeón cuando falta una imagen).

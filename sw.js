@@ -1,6 +1,6 @@
 /* Service worker: guarda la app, los datos y los retratos para usarla sin conexión.
    Sube VERSION cada vez que cambies datos o código para que los móviles se actualicen. */
-const VERSION = 'mcoc-v27';
+const VERSION = 'mcoc-v28';
 const CORE = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'data/data.js', 'data/images.js', 'data/kit-effects.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'

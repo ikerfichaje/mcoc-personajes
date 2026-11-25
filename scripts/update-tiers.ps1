@@ -175,7 +175,10 @@ try {
     $c | Add-Member ytNew $ny; $c | Add-Member atkNew $na; $c | Add-Member defNew $nd
   }
   Write-Host "Cambios en Campeones (youtubers | GB ataque/defensa): $($chg.Count)"; $chg | ForEach-Object { Write-Host $_ }
-  $sorted = $champs.Values | Sort-Object @{ e = { if ($null -eq $_.score) { -1 } else { $_.score } }; Descending = $true }, @{ e = { $_.nOps }; Descending = $true }, name
+  # A igual nota, primero el que tiene más acuerdo entre fuentes (con una sola opinión no hay acuerdo: va detrás)
+  $agreeRank = @{ 'Alto' = 0; 'Medio' = 1; 'Bajo' = 2 }
+  $sorted = $champs.Values | Sort-Object @{ e = { if ($null -eq $_.score) { -1 } else { $_.score } }; Descending = $true },
+    @{ e = { if ($agreeRank.ContainsKey($_.agree)) { $agreeRank[$_.agree] } else { 3 } } }, @{ e = { $_.nOps }; Descending = $true }, name
   Write-Host 'Top 15 general:'; $sorted | Select-Object -First 15 | ForEach-Object { Write-Host ("  {0,-34} {1,-3} {2,3}  ({3} opiniones, acuerdo {4})" -f $_.name, $_.gen, $_.score, $_.nOps, $_.agree) }
   if ($DryRun) { Write-Host 'DryRun: no se ha modificado el Excel.'; return }
 

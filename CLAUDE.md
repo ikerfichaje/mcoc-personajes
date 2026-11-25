@@ -29,7 +29,6 @@ Hojas (en este orden):
 | **Battlecasts** | 25 Battlecasts: clase, nº y lista de campeones que lo recomiendan (ordenados por tier), efectos conocidos. |
 | **Statcasts** | 24 familias de Statcast (prefijo × clase) con sus sufijos + tabla de retratos y qué campeones los recomiendan. |
 | **Guía de reliquias** | Explicación de Battlecast vs Statcast, cómo elegir, fuentes y limitaciones. |
-
 Columnas de **Campeones** (A→R):
 `Campeón | Clase | Rareza máx. | Tier youtubers | Guide Blog ataque | Guide Blog defensa | Inmunidades permanentes | Inmunidades condicionales | Inmunidades no confirmadas | Resistencias pasivas | Efectos que provoca al rival | Mejoras/efectos que obtiene | Otras mecánicas | Efectos pasivos (siempre activos) | Por sinergia | Habilidades clave (fichas parciales) | Ficha | Enlace texto completo`
 
@@ -453,11 +452,27 @@ Abomination, Aegon, Agent Venom, Air-Walker, Annihilus, Black Bolt, Black Widow,
 - Excel se edita con **Excel COM desde PowerShell** (en este PC no hay Python ni Node). Fandom (`static.wikia.nocookie.net`) bloquea descargas con Cloudflare; los retratos nuevos de MCOCHUB vienen en `.webp`, que `System.Drawing` no lee: se convierten con WPF (`PresentationCore`, `BitmapDecoder`).
 - mcoc.app usa nombres cortos: `Carina` = Carina Tivan, `Scarlet Witch` = Scarlet Witch (Sigil), `Spider-Man` = Spider-Man (Classic).
 
+## 9b. Imágenes (12/11/2026)
+- El usuario **borra `img/` e `icons/` en local** para ahorrar espacio (están en GitHub). Es normal que estén vacías.
+- Si hay campeones nuevos, descargar **solo su retrato**: `scripts\download-images.ps1` (sin `-All`) solo procesa los que no están en `data\images.js`. El usuario lo sube y lo borra.
+
 ## 10. Tier list general (12/11/2026)
 - Hoja nueva **«Tier list general»** (todas las clases juntas), generada por `scripts/update-tiers.ps1` (Excel COM; también actualiza las columnas de tier de Campeones y Reliquias y la Leyenda). Ejecutarlo cada mes y luego `excel-to-json.ps1` + subir `VERSION` en `sw.js`.
-- Opiniones independientes (hasta 5, todas de ATAQUE): Vega, Lagacy, MetalSonicDude, Seatin (nota 0-100 de cada uno, leída de `mcoc.app/champions/<slug>`) + MCOC Guide Blog. Letras → centro de la franja de mcoc.app (S+≥96, S≥86, A≥72, B≥60, C≥46, D≥30). Media → tier general. Acuerdo por rango (≤20 Alto, ≤40 Medio, >40 Bajo).
+- Opiniones independientes (hasta 5, todas de ATAQUE): Vega, Lagacy, MetalSonicDude, Seatin (nota 0-100 de cada uno, leída de `mcoc.app/champions/<slug>`) + MCOC Guide Blog. Letras → centro de la franja de mcoc.app. Media → tier general. Acuerdo por rango (≤20 Alto, ≤40 Medio, >40 Bajo).
+- **Las franjas de mcoc.app no son fijas**: el script las deduce cada vez (nota mínima de cada letra). El 12/11 eran S+≥96, S≥86, A≥72; el 24/11 pasaron a S+≥100, S≥87, A≥70, B≥60, C≥46, D≥30 (28 campeones empatan en S+ con 100). Decidido: seguir las franjas de mcoc.app tal cual y aceptar sus cambios de letra. La app también las deduce de los datos (columna «Media youtubers (mcoc.app)», p. ej. `S (93)`), no las tiene escritas en el código.
+- **Desempate** (hoja y app): nota general ↓, luego acuerdo (Alto > Medio > Bajo > una sola opinión), luego nº de opiniones ↓, luego nombre. Si todo coincide (p. ej. varios con todas las notas a 100) el orden es alfabético.
 - **MCOC Scout copia el Guide Blog** (300/300 iguales; llama «A++» al S+): solo se usa cuando el Guide Blog no valora al campeón.
 - Las hojas de Google de los 4 youtubers se pueden exportar (`/export?format=xlsx`) pero tienen formatos libres (tiers en columnas, emojis): es más fiable leer mcoc.app.
 - **Descartadas:** gacha.gg (duplicados con notas distintas, Doctor Strange en D, Stark Spidey en C), PocketGamer (Doctor Strange en el último tier, Jack O'Lantern como Místico), MMO Culture (solo ~5 por tier), findingdulcinea/ofzenandcomputing/rosenberryrooms (contenido reciclado, 403).
 - App: pestaña Ranking → «Todas» + «General» (por defecto); en la ficha, tier general con puesto y desplegable «Comparar tier lists».
 - PowerShell + Excel COM: tras asignar texto a `.Value2`, asignar un `object[,]` a `.Value2` falla («no se puede convertir a String»); usar `.Formula = $arr`. Los elementos del array deben ser tipos .NET simples (no PSObject).
+- PowerShell 5.1: los `.ps1` con tildes deben guardarse en UTF-8 **con BOM** (si no, se leen como ANSI). Dentro de los argumentos de un método, `$arr[$r, 2]` rompe el parser (la coma se toma como separador): sacarlo antes a una variable.
+- Solo hay una app (la de la raíz). La antigua `v2/` se eliminó (24/11/2026); al actualizar datos solo se sube `VERSION` en `sw.js`.
+
+- El «Puesto» que muestra la app lo calcula ella misma con su orden (no lee la columna «Puesto» de la hoja), así ficha y ranking siempre coinciden.
+
+## 11. Concentración de estadísticas / Stat Focus — APARCADO (24/11/2026)
+- El usuario quiere el Stat Focus recomendado de ataque y defensa de cada 7★, pero **decidió no descargarlo**. No descargar nada de esto sin que lo pida de nuevo.
+- Dónde está: la ficha de cada campeón en MCOCHUB (`title="Attack Stat Focus: X"` / `title="Defense Stat Focus: Y"`), y todo junto en `/data/stat-focus.json`. Pero MCOCHUB pide «Don't hammer the site or its API with automated bulk requests» y su `robots.txt` excluye `/data/`. Alternativa limpia: pedirles permiso o clave de API.
+- Los Champion Spotlights de Kabam traen «Recommended Masteries, Stat Focus, Relics» con el porqué, solo para campeones recientes.
+- Estadísticas posibles (10): Critical Rating, Critical Damage Rating, Armor Penetration, Block Penetration, Special Damage, Armor Rating, Block Proficiency, Energy Resistance, Physical Resistance, Adrenaline.
